@@ -1,6 +1,8 @@
 # Transformer Studio
 
-We are an independent creator of mobile apps. Check out our products in the [Google Play Store](https://play.google.com/store/apps/developer?id=Transformer+Studio)
+We are an independent creator of mobile apps. Check out our products in the [Google Play Store](https://play.google.com/store/apps/developer?id=Transformer+Studio).
+
+We can be contacted at transformer.studio.apps@gmail.com
 
 ## Privacy Policy
 
