@@ -1,0 +1,13 @@
+---
+Parameters:
+  WebDomainParam:
+    Type: String
+    Description: The web domain, also the name of the S3 bucket
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref WebDomainParam
+      WebsiteConfiguration:
+        IndexDocument: index.html
