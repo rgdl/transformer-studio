@@ -1,13 +1,30 @@
----
 Parameters:
   WebDomainParam:
     Type: String
     Description: The web domain, also the name of the S3 bucket
 
 Resources:
+
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref WebDomainParam
       WebsiteConfiguration:
         IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  MyBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebDomainParam
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 's3:GetObject'
+            Principal: '*'
+            Resource: !Sub 'arn:aws:s3:::${WebDomainParam}/*'
