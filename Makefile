@@ -1,12 +1,14 @@
 template := file://cloudformation/template.yaml
 stack_name := transformer-studio
 
-deploy:
+deploy-stack:
 	aws cloudformation update-stack \
 		--stack-name $(stack_name) \
 		--template-body $(template) \
-		--parameters 'ParameterKey=WebDomainParam,ParameterValue=transformer-studio.com'
+		--parameters \
+		'ParameterKey=WebDomainParam,ParameterValue=transformer-studio.com' \
+		'ParameterKey=RegionParam,ParameterValue=ap-southeast-2' \
+		'ParameterKey=CertificateArnParam,ParameterValue=arn:aws:acm:us-east-1:587086740654:certificate/9fdaf05e-2f75-4ee4-a6b5-191c6dafe2f3'
 
-validate:
-	aws cloudformation validate-template \
-		--template-body $(template)
+deploy-site:
+	aws s3 sync site-content s3://transformer-studio.com --delete

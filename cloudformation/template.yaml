@@ -1,7 +1,16 @@
 Parameters:
+
+  RegionParam:
+    Type: String
+    Description: The AWS region
+
   WebDomainParam:
     Type: String
     Description: The web domain, also the name of the S3 bucket
+
+  CertificateArnParam:
+    Type: String
+    Description: ARN for the ACM Certificate, to allow https. Has to be created separately, due to weirdness around regions
 
 Resources:
 
@@ -28,3 +37,31 @@ Resources:
             Action: 's3:GetObject'
             Principal: '*'
             Resource: !Sub 'arn:aws:s3:::${WebDomainParam}/*'
+
+  CloudFront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref WebDomainParam
+          - !Sub 'www.${WebDomainParam}'
+        HttpVersion: http2
+        Origins:
+          - DomainName: !Sub '${WebDomainParam}.s3-website-${RegionParam}.amazonaws.com'
+            Id: S3Origin
+            CustomOriginConfig: 
+              OriginProtocolPolicy: http-only
+        DefaultRootObject: index.html
+        Enabled: true
+        DefaultCacheBehavior:
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArnParam
+          MinimumProtocolVersion: 'TLSv1.2_2021'
+          SslSupportMethod: sni-only
