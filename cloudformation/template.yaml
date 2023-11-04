@@ -12,6 +12,10 @@ Parameters:
     Type: String
     Description: ARN for the ACM Certificate, to allow https. Has to be created separately, due to weirdness around regions
 
+  MXRecordParam:
+    Type: String
+    Description: The value of the MX record to be added in Route53 for email to work
+
 Resources:
 
   S3Bucket:
@@ -65,3 +69,63 @@ Resources:
           AcmCertificateArn: !Ref CertificateArnParam
           MinimumProtocolVersion: 'TLSv1.2_2021'
           SslSupportMethod: sni-only
+
+  MyHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref WebDomainParam
+
+  ARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Ref WebDomainParam
+      Type: A
+      HostedZoneId: !Ref MyHostedZone
+      AliasTarget:
+        DNSName: !GetAtt CloudFront.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  AAAARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Ref WebDomainParam
+      Type: AAAA
+      HostedZoneId: !Ref MyHostedZone
+      AliasTarget:
+        DNSName: !GetAtt CloudFront.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  MXRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Ref WebDomainParam
+      Type: MX
+      TTL: 900
+      HostedZoneId: !Ref MyHostedZone
+      ResourceRecords:
+        - !Ref MXRecordParam
+
+  wwwMyHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Sub 'www.${WebDomainParam}'
+
+  wwwARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub 'www.${WebDomainParam}'
+      Type: A
+      HostedZoneId: !Ref wwwMyHostedZone
+      AliasTarget:
+        DNSName: !GetAtt CloudFront.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  wwwAAAARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub 'www.${WebDomainParam}'
+      Type: AAAA
+      HostedZoneId: !Ref wwwMyHostedZone
+      AliasTarget:
+        DNSName: !GetAtt CloudFront.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
