@@ -13,3 +13,5 @@ deploy-stack:
 
 deploy-site:
 	aws s3 sync site-content s3://transformer-studio.com --delete
+	aws cloudfront create-invalidation --distribution-id E3N36U9IZEKQNP --paths "/*"
+

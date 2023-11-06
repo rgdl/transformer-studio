@@ -23,6 +23,9 @@ def test_www_and_https() -> None:
 
 
 def _test_url(url: str) -> None:
-    response = requests.get(url, timeout=5, headers={"User-Agent": "test"})
+    headers = {"user-agent": "test"}
+
+    with requests.Session() as session:
+        response = session.get(url, headers=headers)
 
     assert response.status_code == 200, f"Failed for {url}"
