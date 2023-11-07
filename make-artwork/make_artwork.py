@@ -189,23 +189,44 @@ def outline(image: Image.Image) -> Image.Image:
     # TODO: Add expanded out versions of the shape so it's like it's echoing out
 
     # TODO: trace rays between the outline and the edge of the image
-    # TODO: sliders to get blur just right
 
     huge_blur = edges.copy()
     big_blur = edges.copy()
     small_blur = edges.copy()
 
-    for _ in range(4):
+    cols = st.columns(3)
+    n_small_blur = cols[0].slider("Small Blur", 0, 10, 3)
+    n_big_blur = cols[1].slider("Big Blur", 10, 100, 23)
+    n_huge_blur = cols[2].slider("Huge Blur", 100, 1000, 265)
+
+    total_blur = n_small_blur + n_big_blur + n_huge_blur
+    pbar = st.progress(0.)
+    blurs_completed = 0
+
+    for _ in range(n_small_blur):
         small_blur = apply_to_neighbourhood(small_blur, _smooth)
+        blurs_completed += 1
+        pbar.progress(blurs_completed / total_blur)
 
-    for _ in range(20):
+    for _ in range(n_big_blur):
         big_blur = apply_to_neighbourhood(big_blur, _smooth)
+        blurs_completed += 1
+        pbar.progress(blurs_completed / total_blur)
 
-    for _ in range(180):
+    for _ in range(n_huge_blur):
         huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
+        blurs_completed += 1
+        pbar.progress(blurs_completed / total_blur)
 
 
-    x = np.stack([huge_blur, big_blur, small_blur], axis=2).max(axis=2)
+    x = np.stack(
+        [
+            huge_blur,
+            big_blur,
+            small_blur,
+        ],
+        axis=2,
+    ).max(axis=2)
 
     output = np.stack([x for _ in range(3)], axis=2).astype(np.uint8)
     return Image.fromarray(output)
@@ -219,11 +240,7 @@ def main() -> None:
     build_shape(icon)
     icon = outline(icon)
 
-    left_col, right_col = st.columns(2)
-    left_col.image(icon)
-    right_col.image(
-        "https://lightlysketched.com/wp-content/uploads/2023/04/4-3.jpg"
-    )
+    st.image(icon)
 
 
 main()
