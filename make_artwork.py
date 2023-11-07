@@ -7,7 +7,9 @@ from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
 
-FONT_DIR = Path("/System/Library/Fonts")
+FONT_DIR = Path("~/Library/Fonts").expanduser()
+FONT = FONT_DIR / "SauceCodeProNerdFontPropo-Regular.ttf"
+BUTTERFLIES = ["", "󱖉", "󱖊"]
 
 
 class Font:
@@ -52,28 +54,11 @@ def main() -> None:
 
     with st.sidebar:
         font_size = st.slider("Font Size", 1, 500, 100)
-        #font_file = st.selectbox("Font", get_font_files(), format_func=lambda f: f.name)
+        glyph = st.selectbox("Glyph", BUTTERFLIES)
 
-    img_per_row = 4
-
-    for idx, font_file in enumerate(get_font_files()):
-
-        if idx % img_per_row == 0:
-            cont = st.container()
-            cols = iter(st.columns(img_per_row))
-
-        col = next(cols)
-
-        with cont:
-            try:
-                font = Font(font_file, font_size)
-                col.write(font.name)
-                img = draw_text("🦋", font)
-                col.image(img)
-
-            except Exception as e:
-                col.error(e)
-
+    font = Font(FONT, font_size)
+    img = draw_text(glyph, font)
+    st.image(img)
 
 
 main()
