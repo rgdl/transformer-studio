@@ -183,13 +183,29 @@ def outline(image: Image.Image) -> Image.Image:
 
         return smoothed
 
-    x = apply_to_neighbourhood(x, _find_edges)
+    edges = apply_to_neighbourhood(x, _find_edges)
 
     # TODO: learn how to do acutal kernel transforms efficiently
     # TODO: Add expanded out versions of the shape so it's like it's echoing out
 
-    for _ in range(50):
-        x = apply_to_neighbourhood(x, _smooth)
+    # TODO: trace rays between the outline and the edge of the image
+    # TODO: sliders to get blur just right
+
+    huge_blur = edges.copy()
+    big_blur = edges.copy()
+    small_blur = edges.copy()
+
+    for _ in range(4):
+        small_blur = apply_to_neighbourhood(small_blur, _smooth)
+
+    for _ in range(20):
+        big_blur = apply_to_neighbourhood(big_blur, _smooth)
+
+    for _ in range(180):
+        huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
+
+
+    x = np.stack([huge_blur, big_blur, small_blur], axis=2).max(axis=2)
 
     output = np.stack([x for _ in range(3)], axis=2).astype(np.uint8)
     return Image.fromarray(output)
