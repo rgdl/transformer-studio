@@ -4,6 +4,7 @@ Need to create an icon (24-bit JPEG or PNG, 512x512) and a header image (24-bit 
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from typing import Iterator
 from typing import Union
 from typing_extensions import Self
@@ -149,31 +150,49 @@ def build_shape(background: Image.Image) -> Image.Image:
     return background
 
 
+def apply_to_neighbourhood(x: np.ndarray, func: Callable) -> np.ndarray:
+    return func(x, get_neighbourhood(x))
+
+
+def get_neighbourhood(x: np.ndarray) -> np.ndarray:
+    # TODO: func to build neighbourhood for reuse, include diagonals as well
+
+    u_neighbour = np.pad(x, ((1, 0), (0, 0)))[:-1]
+    d_neighbour = np.pad(x, ((0, 1), (0, 0)))[1:]
+    l_neighbour = np.pad(x, ((0, 0), (1, 0)))[:, :-1]
+    r_neighbour = np.pad(x, ((0, 0), (0, 1)))[:, 1:]
+
+    return np.stack(
+        [u_neighbour, d_neighbour, l_neighbour, r_neighbour],
+        axis=2,
+    )
+
+
 def outline(image: Image.Image) -> Image.Image:
-    x = np.array(image).astype(np.float64).mean(axis=2, keepdims=True)
+    x = np.array(image).astype(np.float64).mean(axis=2)
 
-    padded = np.pad(x[:, :, 0], 1)
-    u_neighbour = padded[:-2, 1:-1]
-    d_neighbour = padded[2:, 1:-1]
-    l_neighbour = padded[1:-1, :-2]
-    r_neighbour = padded[1:-1, 2:]
-    st.write(u_neighbour.shape, x.shape)
+    def _find_edges(x: np.ndarray, n: np.ndarray) -> np.ndarray:
+        return (x.reshape(*x.shape, 1) - n).max(axis=2)
 
-    assert u_neighbour.shape == x.squeeze().shape
-    assert d_neighbour.shape == x.squeeze().shape
-    assert l_neighbour.shape == x.squeeze().shape
-    assert r_neighbour.shape == x.squeeze().shape
+    def _smooth(x: np.ndarray, n: np.ndarray) -> np.ndarray:
+        n = np.concatenate([x.reshape(*x.shape, 1), n], axis=2)
+        smoothed = n.mean(axis=2)
 
-    neighbours = np.stack([
-        u_neighbour,
-        d_neighbour,
-        l_neighbour,
-        r_neighbour,
-    ], axis=2)
+        # Bring max back up
+        smoothed *= 255 / smoothed.max()
 
-    edges = (x - neighbours).max(axis=2).astype(np.uint8)
+        return smoothed
 
-    return Image.fromarray(np.stack([edges for _ in range(3)], axis=2))
+    x = apply_to_neighbourhood(x, _find_edges)
+
+    # TODO: learn how to do acutal kernel transforms efficiently
+    # TODO: Add expanded out versions of the shape so it's like it's echoing out
+
+    for _ in range(50):
+        x = apply_to_neighbourhood(x, _smooth)
+
+    output = np.stack([x for _ in range(3)], axis=2).astype(np.uint8)
+    return Image.fromarray(output)
 
 
 def main() -> None:
