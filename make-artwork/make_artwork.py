@@ -8,6 +8,7 @@ from typing import Iterator
 from typing import Union
 from typing_extensions import Self
 
+import numpy as np
 import streamlit as st
 from PIL import Image
 from PIL import ImageDraw
@@ -24,6 +25,7 @@ BBox = Union[
 ]
 
 class RGB:
+    GREY = (200, 200, 200)
     PURPLE = (110, 50, 190)
     WHITE = (255, 255, 255)
 
@@ -122,11 +124,7 @@ def draw_ellipse(
     return background
 
 
-def main() -> None:
-    st.title("Make Artwork for Website")
-
-    icon = Image.new("RGB", (512, 512), RGB.WHITE)
-
+def build_shape(background: Image.Image) -> Image.Image:
     with st.sidebar:
         y_shift = -st.slider("Horizonal body shift", 0, 100)
 
@@ -146,8 +144,45 @@ def main() -> None:
         upper_wing,
         upper_wing.hflip(256),
     ):
-        draw_ellipse(icon, ellipse)
+        draw_ellipse(background, ellipse)
 
+    return background
+
+
+def outline(image: Image.Image) -> Image.Image:
+    x = np.array(image).astype(np.float64).mean(axis=2, keepdims=True)
+
+    padded = np.pad(x[:, :, 0], 1)
+    u_neighbour = padded[:-2, 1:-1]
+    d_neighbour = padded[2:, 1:-1]
+    l_neighbour = padded[1:-1, :-2]
+    r_neighbour = padded[1:-1, 2:]
+    st.write(u_neighbour.shape, x.shape)
+
+    assert u_neighbour.shape == x.squeeze().shape
+    assert d_neighbour.shape == x.squeeze().shape
+    assert l_neighbour.shape == x.squeeze().shape
+    assert r_neighbour.shape == x.squeeze().shape
+
+    neighbours = np.stack([
+        u_neighbour,
+        d_neighbour,
+        l_neighbour,
+        r_neighbour,
+    ], axis=2)
+
+    edges = (x - neighbours).max(axis=2).astype(np.uint8)
+
+    return Image.fromarray(np.stack([edges for _ in range(3)], axis=2))
+
+
+def main() -> None:
+    st.title("Make Artwork for Website")
+
+    icon = Image.new("RGB", (512, 512), RGB.GREY)
+
+    build_shape(icon)
+    icon = outline(icon)
 
     left_col, right_col = st.columns(2)
     left_col.image(icon)
