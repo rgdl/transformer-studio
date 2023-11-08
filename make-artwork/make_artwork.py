@@ -43,8 +43,11 @@ class Ray:
         return hash(self.angle)
 
     def colour_in(self, image: Array) -> None:
+        # Colour is a function of angle
+        colour = ((self.angle / np.pi) % 1) * 255
+
         for p in self.pixels:
-            image[p.y, p.x] = 100
+            image[p.y, p.x] = colour
 
 
 def apply_to_neighbourhood(x: Array, func: ImageTransform) -> Array:
@@ -54,10 +57,10 @@ def apply_to_neighbourhood(x: Array, func: ImageTransform) -> Array:
 def get_neighbourhood(x: Array) -> Array:
     # TODO: func to build neighbourhood for reuse, include diagonals as well
 
-    u_neighbour = np.pad(x, ((1, 0), (0, 0)))[:-1]
-    d_neighbour = np.pad(x, ((0, 1), (0, 0)))[1:]
-    l_neighbour = np.pad(x, ((0, 0), (1, 0)))[:, :-1]
-    r_neighbour = np.pad(x, ((0, 0), (0, 1)))[:, 1:]
+    u_neighbour = np.pad(x, ((1, 0), (0, 0)), mode="edge")[:-1]
+    d_neighbour = np.pad(x, ((0, 1), (0, 0)), mode="edge")[1:]
+    l_neighbour = np.pad(x, ((0, 0), (1, 0)), mode="edge")[:, :-1]
+    r_neighbour = np.pad(x, ((0, 0), (0, 1)), mode="edge")[:, 1:]
 
     return np.stack(
         [u_neighbour, d_neighbour, l_neighbour, r_neighbour],
@@ -115,17 +118,15 @@ def outline(image: Image.Image) -> Image.Image:
         blurs_completed += 1
         pbar.progress(blurs_completed / total_blur)
 
-    # TODO: uncomment!
-    # for _ in range(n_big_blur):
-    #     big_blur = apply_to_neighbourhood(big_blur, _smooth)
-    #     blurs_completed += 1
-    #     pbar.progress(blurs_completed / total_blur)
+    for _ in range(n_big_blur):
+        big_blur = apply_to_neighbourhood(big_blur, _smooth)
+        blurs_completed += 1
+        pbar.progress(blurs_completed / total_blur)
 
-    # TODO: uncomment!
-    # for _ in range(n_huge_blur):
-    #     huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
-    #     blurs_completed += 1
-    #     pbar.progress(blurs_completed / total_blur)
+    for _ in range(n_huge_blur):
+        huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
+        blurs_completed += 1
+        pbar.progress(blurs_completed / total_blur)
 
     x = np.stack(
         [
@@ -157,6 +158,16 @@ def outline(image: Image.Image) -> Image.Image:
 
     pbar = st.progress(0.0, "Tracing")
     total = len(outer_edge_pixels)
+
+    # Bulk up the edges to close gaps
+    for _ in range(1):
+        edges = apply_to_neighbourhood(
+            edges,
+            lambda x, n: np.concatenate(
+                [x.reshape(*x.shape, 1), n],
+                axis=2,
+            ).max(axis=2),
+        )
 
     for p in outer_edge_pixels:
 
@@ -192,12 +203,9 @@ def outline(image: Image.Image) -> Image.Image:
             if edges[current.y, current.x] > 0:
                 break
 
-        # Progress to the candidate pixel closest to the line bewteen the
-        # outside and the center
-
-        # If we reach a coloured-in pixel, we're done
-
-        # If we reach the center, something has gone wrong
+            if current.distance(img_center) < 2:
+                pass
+                #raise ValueError("There's a leak!")
 
         rays.add(Ray(ray_pixels, np.arctan2(trajectory.y, trajectory.x)))
 

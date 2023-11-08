@@ -34,6 +34,11 @@ class Point:
     def __hash__(self) -> int:
         return hash(tuple(self))
 
+    def distance(self, other: Self) -> float:
+        return (
+            (self.x - other.x) ** 2 + (self.y - other.y) ** 2
+        ) ** 0.5
+
 
 def get_bbox(center: Point, width: int, height: int) -> BBox:
     to_corner = Point(width // 2, height // 2)
