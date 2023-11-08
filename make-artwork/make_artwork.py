@@ -3,6 +3,8 @@ Need to create:
     * an icon (24-bit JPEG or PNG, 512x512)
     * a header image (24-bit JPEG or PNG, 4096x2304)
 """
+from dataclasses import dataclass
+from functools import partial
 from typing import Callable
 from typing import Union
 from typing import TypeAlias
@@ -22,6 +24,7 @@ Array: TypeAlias = npt.NDArray[Number]
 ImageTransform: TypeAlias = Callable[[Array, Array], Array]
 
 
+@dataclass
 class Ray:
     """
     For each pixel on the outside edge of the image, draw a line to the image
@@ -35,6 +38,13 @@ class Ray:
 
     pixels: set[Point]
     angle: float
+
+    def __hash__(self) -> int:
+        return hash(self.angle)
+
+    def colour_in(self, image: Array) -> None:
+        for p in self.pixels:
+            image[p.y, p.x] = 100
 
 
 def apply_to_neighbourhood(x: Array, func: ImageTransform) -> Array:
@@ -55,6 +65,21 @@ def get_neighbourhood(x: Array) -> Array:
     )
 
 
+def distance_to_line(p: Point, anchor1: Point, anchor2: Point) -> float:
+    """
+    https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#Line_defined_by_two_points
+
+    To save computation time, I'm dropping the denominator, as it only depends
+    on the anchors.
+    """
+    x_delta = anchor2.x - anchor1.x
+    y_delta = anchor2.y - anchor1.y
+
+    return abs(
+        x_delta * (anchor1.y - p.y) - (anchor1.x - p.x) * y_delta
+    )
+
+
 def outline(image: Image.Image) -> Image.Image:
     x = np.array(image).astype(np.float64).mean(axis=2)
 
@@ -71,10 +96,6 @@ def outline(image: Image.Image) -> Image.Image:
         return smoothed  # type: ignore
 
     edges = apply_to_neighbourhood(x, _find_edges)
-
-    # TODO: learn how to do acutal kernel transforms efficiently
-
-    # TODO: trace rays between the outline and the edge of the image
 
     huge_blur = edges.copy()
     big_blur = edges.copy()
@@ -95,16 +116,16 @@ def outline(image: Image.Image) -> Image.Image:
         pbar.progress(blurs_completed / total_blur)
 
     # TODO: uncomment!
-    #for _ in range(n_big_blur):
-    #    big_blur = apply_to_neighbourhood(big_blur, _smooth)
-    #    blurs_completed += 1
-    #    pbar.progress(blurs_completed / total_blur)
+    # for _ in range(n_big_blur):
+    #     big_blur = apply_to_neighbourhood(big_blur, _smooth)
+    #     blurs_completed += 1
+    #     pbar.progress(blurs_completed / total_blur)
 
     # TODO: uncomment!
-    #for _ in range(n_huge_blur):
-    #    huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
-    #    blurs_completed += 1
-    #    pbar.progress(blurs_completed / total_blur)
+    # for _ in range(n_huge_blur):
+    #     huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
+    #     blurs_completed += 1
+    #     pbar.progress(blurs_completed / total_blur)
 
     x = np.stack(
         [
@@ -118,11 +139,12 @@ def outline(image: Image.Image) -> Image.Image:
     # Ray tracing
 
     traced_pixels: set[Point] = set()
+    rays: set[Ray] = set()
 
-    max_y = x.shape[0]
-    max_x = x.shape[1]
-    all_y = range(max_y)
-    all_x = range(max_x)
+    max_y = x.shape[0] - 1
+    max_x = x.shape[1] - 1
+    all_y = range(max_y + 1)
+    all_x = range(max_x + 1)
 
     outer_edge_pixels = {
         *(Point(0, y) for y in all_y),
@@ -133,22 +155,58 @@ def outline(image: Image.Image) -> Image.Image:
 
     img_center = Point(max_x // 2, max_y // 2)
 
+    pbar = st.progress(0.0, "Tracing")
+    total = len(outer_edge_pixels)
+
     for p in outer_edge_pixels:
-        pass
 
-    # TODO: test tracing - colour every pixel on every ray, ensure none missing
-    """
-    In tracing the ray from the outside to the center, there will be 3 pixels
-    to choose from at each step. The 3 neighbours that are closer to the center
-    than the current pixel. I can use this formula to work out which of the 3
-    is closest to the line:
+        ray_pixels: set[Point] = set()
 
-    https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#Line_defined_by_two_points
-    The 2 points that define the line are the outside point and the center
-    point. Then the next pixel is the neighbour closest to the line (out of the
-    3 neighbours between the current pixel and the center).
+        # Identify the direction, so we know which are the candidate pixels
+        trajectory = img_center - p
 
-    """
+        x_offset = 1 if trajectory.x > 0 else -1
+        y_offset = 1 if trajectory.y > 0 else -1
+
+        neighbour_offsets = (
+            Point(x_offset, 0),
+            Point(x_offset, y_offset),
+            Point(0, y_offset),
+        )
+
+        current = p
+
+        while True:
+            if current not in traced_pixels:
+                ray_pixels.add(current)
+
+            candidate_next_pixels = [
+                current + offset for offset in neighbour_offsets
+            ]
+
+            current = min(
+                candidate_next_pixels,
+                key=partial(distance_to_line, anchor1=p, anchor2=img_center),
+            )
+
+            if edges[current.y, current.x] > 0:
+                break
+
+        # Progress to the candidate pixel closest to the line bewteen the
+        # outside and the center
+
+        # If we reach a coloured-in pixel, we're done
+
+        # If we reach the center, something has gone wrong
+
+        rays.add(Ray(ray_pixels, np.arctan2(trajectory.y, trajectory.x)))
+
+        traced_pixels |= ray_pixels
+
+        pbar.progress(len(rays) / total)
+
+    for ray in rays:
+        ray.colour_in(x)
 
     colours = np.stack([x for _ in range(3)], axis=2)
     return Image.fromarray(colours.astype(np.uint8))
