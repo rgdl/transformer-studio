@@ -1,7 +1,4 @@
-from itertools import product
-
 import requests
-import pytest
 
 DOMAIN = "transformer-studio.com"
 
