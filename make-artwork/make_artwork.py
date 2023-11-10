@@ -3,6 +3,7 @@ Need to create:
     * an icon (24-bit JPEG or PNG, 512x512)
     * a header image (24-bit JPEG or PNG, 4096x2304)
 """
+import time
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable
@@ -43,8 +44,9 @@ class Ray:
         return hash(self.angle)
 
     def colour_in(self, image: Array) -> None:
+        domain = ((self.angle / (2 * np.pi)) % 1)
         # Colour is a function of angle
-        colour = ((self.angle / np.pi) % 1) * 255
+        colour = domain * 255
 
         for p in self.pixels:
             image[p.y, p.x] = colour
@@ -83,12 +85,7 @@ def distance_to_line(p: Point, anchor1: Point, anchor2: Point) -> float:
     )
 
 
-def outline(image: Image.Image) -> Image.Image:
-    x = np.array(image).astype(np.float64).mean(axis=2)
-
-    def _find_edges(x: Array, n: Array) -> Array:
-        return (x.reshape(*x.shape, 1) - n).max(axis=2)  # type: ignore
-
+def blur(x: Array) -> Array:
     def _smooth(x: Array, n: Array) -> Array:
         n = np.concatenate([x.reshape(*x.shape, 1), n], axis=2)
         smoothed = n.mean(axis=2)
@@ -98,11 +95,9 @@ def outline(image: Image.Image) -> Image.Image:
 
         return smoothed  # type: ignore
 
-    edges = apply_to_neighbourhood(x, _find_edges)
-
-    huge_blur = edges.copy()
-    big_blur = edges.copy()
-    small_blur = edges.copy()
+    huge_blur = x.copy()
+    big_blur = x.copy()
+    small_blur = x.copy()
 
     cols = st.columns(3)
     n_small_blur = cols[0].slider("Small Blur", 0, 10, 3)
@@ -113,29 +108,46 @@ def outline(image: Image.Image) -> Image.Image:
     pbar = st.progress(0.0)
     blurs_completed = 0
 
+    t0 = time.time()
+
     for _ in range(n_small_blur):
         small_blur = apply_to_neighbourhood(small_blur, _smooth)
         blurs_completed += 1
         pbar.progress(blurs_completed / total_blur)
+
+    with st.sidebar:
+        st.write(f"Small blur: `{time.time() - t0:.02f} seconds`")
+
+    t0 = time.time()
 
     for _ in range(n_big_blur):
         big_blur = apply_to_neighbourhood(big_blur, _smooth)
         blurs_completed += 1
         pbar.progress(blurs_completed / total_blur)
 
+    with st.sidebar:
+        st.write(f"Big blur: `{time.time() - t0:.02f} seconds`")
+
+    t0 = time.time()
+
     for _ in range(n_huge_blur):
         huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
         blurs_completed += 1
         pbar.progress(blurs_completed / total_blur)
 
-    x = np.stack(
-        [
-            huge_blur,
-            big_blur,
-            small_blur,
-        ],
-        axis=2,
-    ).max(axis=2)
+    with st.sidebar:
+        st.write(f"Huge blur: `{time.time() - t0:.02f} seconds`")
+
+    return np.stack([huge_blur, big_blur, small_blur], axis=2).max(axis=2)
+
+
+def outline(image: Image.Image) -> Image.Image:
+    x = np.array(image).astype(np.float64).mean(axis=2)
+
+    def _find_edges(x: Array, n: Array) -> Array:
+        return (x.reshape(*x.shape, 1) - n).max(axis=2)  # type: ignore
+
+    edges = apply_to_neighbourhood(x, _find_edges)
 
     # Ray tracing
 
@@ -168,6 +180,8 @@ def outline(image: Image.Image) -> Image.Image:
                 axis=2,
             ).max(axis=2),
         )
+
+    t0 = time.time()
 
     for p in outer_edge_pixels:
 
@@ -204,8 +218,7 @@ def outline(image: Image.Image) -> Image.Image:
                 break
 
             if current.distance(img_center) < 2:
-                pass
-                #raise ValueError("There's a leak!")
+                raise ValueError("There's a leak!")
 
         rays.add(Ray(ray_pixels, np.arctan2(trajectory.y, trajectory.x)))
 
@@ -213,8 +226,18 @@ def outline(image: Image.Image) -> Image.Image:
 
         pbar.progress(len(rays) / total)
 
+    with st.sidebar:
+        st.write(f"Find rays: `{time.time() - t0:.02f} seconds`")
+
+    t0 = time.time()
+
     for ray in rays:
         ray.colour_in(x)
+
+    with st.sidebar:
+        st.write(f"Colour in: `{time.time() - t0:.02f} seconds`")
+
+    x = np.stack([x, blur(edges)], axis=2).max(axis=2)
 
     colours = np.stack([x for _ in range(3)], axis=2)
     return Image.fromarray(colours.astype(np.uint8))
@@ -225,10 +248,16 @@ def main() -> None:
 
     icon = Image.new("RGB", (512, 512), RGB.GREY)
 
+    t0 = time.time()
+
     build_shape(icon)
     icon = outline(icon)
 
     st.image(icon)
+
+    with st.sidebar:
+        st.divider()
+        st.write(f"Total Duration: `{time.time() - t0:.02f} seconds`")
 
 
 main()
