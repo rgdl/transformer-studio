@@ -3,7 +3,6 @@ from pathlib import Path
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
-from typing_extensions import Self
 
 FONT_DIR = Path("~/Library/Fonts").expanduser()
 FONT = FONT_DIR / "SauceCodeProNerdFontPropo-Regular.ttf"

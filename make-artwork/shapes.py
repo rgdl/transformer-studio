@@ -35,9 +35,7 @@ class Point:
         return hash(tuple(self))
 
     def distance(self, other: Self) -> float:
-        return (
-            (self.x - other.x) ** 2 + (self.y - other.y) ** 2
-        ) ** 0.5
+        return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5
 
 
 def get_bbox(center: Point, width: int, height: int) -> BBox:

@@ -7,7 +7,6 @@ import time
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable
-from typing import Union
 from typing import TypeAlias
 
 import numpy as np
@@ -16,10 +15,13 @@ import streamlit as st
 from PIL import Image
 
 from consts import RGB
+from pages.arctangent import expand_to_range
 from shapes import Point
 from shapes import build_shape
 
-Number: TypeAlias = Union[np.float_, np.int_]
+# TODO: optimisations for speed!
+
+Number: TypeAlias = np.float_ | np.int_
 Array: TypeAlias = npt.NDArray[Number]
 
 ImageTransform: TypeAlias = Callable[[Array, Array], Array]
@@ -43,13 +45,30 @@ class Ray:
     def __hash__(self) -> int:
         return hash(self.angle)
 
-    def colour_in(self, image: Array) -> None:
-        domain = ((self.angle / (2 * np.pi)) % 1)
-        # Colour is a function of angle
-        colour = domain * 255
+    def colour_in(
+        self,
+        A: float,
+        image: Array,
+        img_center: Point,
+        domain_transform: Callable[[float], float] | None = None,
+    ) -> Array:
+        # Map [-pi, pi] to [0, 1]
+        domain = (self.angle / (2 * np.pi)) % 1
+
+        if domain_transform is not None:
+            domain = domain_transform(domain)
+
+        colour = 255 * (0.5 + np.sin(2 * np.pi * domain) / 2)
+
+        max_distance_to_center = Point(0, 0).distance(img_center)
 
         for p in self.pixels:
-            image[p.y, p.x] = colour
+            # This is linear - can it be an S-bend?
+            r = p.distance(img_center) / max_distance_to_center
+            saturation = 0.5 + np.arctan(A * (r - 0.5)) / np.pi
+            image[p.y, p.x] = colour * saturation
+
+        return image
 
 
 def apply_to_neighbourhood(x: Array, func: ImageTransform) -> Array:
@@ -72,17 +91,23 @@ def get_neighbourhood(x: Array) -> Array:
 
 def distance_to_line(p: Point, anchor1: Point, anchor2: Point) -> float:
     """
+    p: the point in question
+    anchor1: a point that forms a line with `anchor2`
+    anchor2: a point that forms a line with `anchor1`
+
+    Returns: The distance between the point `p` and the line formed by
+    `anchor1` and `anchor2`
+
     https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#Line_defined_by_two_points
 
     To save computation time, I'm dropping the denominator, as it only depends
     on the anchors.
+
     """
     x_delta = anchor2.x - anchor1.x
     y_delta = anchor2.y - anchor1.y
 
-    return abs(
-        x_delta * (anchor1.y - p.y) - (anchor1.x - p.x) * y_delta
-    )
+    return abs(x_delta * (anchor1.y - p.y) - (anchor1.x - p.x) * y_delta)
 
 
 def blur(x: Array) -> Array:
@@ -102,7 +127,7 @@ def blur(x: Array) -> Array:
     cols = st.columns(3)
     n_small_blur = cols[0].slider("Small Blur", 0, 10, 3)
     n_big_blur = cols[1].slider("Big Blur", 10, 100, 23)
-    n_huge_blur = cols[2].slider("Huge Blur", 100, 1000, 265)
+    n_huge_blur = cols[2].slider("Huge Blur", 100, 1000, 385)
 
     total_blur = n_small_blur + n_big_blur + n_huge_blur
     pbar = st.progress(0.0)
@@ -184,10 +209,9 @@ def outline(image: Image.Image) -> Image.Image:
     t0 = time.time()
 
     for p in outer_edge_pixels:
-
         ray_pixels: set[Point] = set()
 
-        # Identify the direction, so we know which are the candidate pixels
+        # Identify where to look for the candidate pixels
         trajectory = img_center - p
 
         x_offset = 1 if trajectory.x > 0 else -1
@@ -229,17 +253,43 @@ def outline(image: Image.Image) -> Image.Image:
     with st.sidebar:
         st.write(f"Find rays: `{time.time() - t0:.02f} seconds`")
 
+    blurred_edges = blur(edges)
+
+    # Add butterfly to background for each colour channel
+
     t0 = time.time()
+    red = x.copy()
+    green = x.copy()
+    blue = x.copy()
+
+    # TODO: To make it less of a blob, work from the range between then shape's
+    # TODO: edge and the outside, rather than the center and the outisde
+    r = st.slider("shape", -10.0, 10.0, -3.2)
 
     for ray in rays:
-        ray.colour_in(x)
+        red = ray.colour_in(r, red, img_center)
+        green = ray.colour_in(
+            r, green, img_center, lambda d: (d + (1 / 3)) % 1
+        )
+        blue = ray.colour_in(r, blue, img_center, lambda d: (d + (2 / 3)) % 1)
 
     with st.sidebar:
         st.write(f"Colour in: `{time.time() - t0:.02f} seconds`")
 
-    x = np.stack([x, blur(edges)], axis=2).max(axis=2)
+        if st.checkbox("Expand to range", value=True):
+            red = expand_to_range(red, 0, 255)
+            green = expand_to_range(green, 0, 255)
+            blue = expand_to_range(blue, 0, 255)
 
-    colours = np.stack([x for _ in range(3)], axis=2)
+    colours = np.stack(
+        [
+            np.stack([red, blurred_edges], axis=2).max(axis=2),
+            np.stack([green, blurred_edges], axis=2).max(axis=2),
+            np.stack([blue, blurred_edges], axis=2).max(axis=2),
+        ],
+        axis=2,
+    )
+
     return Image.fromarray(colours.astype(np.uint8))
 
 
