@@ -3,7 +3,37 @@ from itertools import product
 import numpy as np
 import numpy.typing as npt
 
-CHUNK_SIZE = 512
+CHUNK_SIZE = 256
+
+
+def _get_node_distances_and_angles(
+    orig: npt.NDArray[np.float_],
+    is_left: bool,
+    is_top: bool,
+    chunk_size: int,
+) -> tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]:
+    points = np.stack(
+        [
+            np.repeat(np.array([range(orig.shape[0])]).T, orig.shape[1], axis=1),
+            np.repeat([range(orig.shape[1])], orig.shape[0], axis=0),
+        ],
+        axis=2
+    )
+
+    assert points.shape == (*orig.shape, 2)
+
+    compare_points = chunk_size * (
+        (points // chunk_size) + np.array(
+            np.array([[[0 if is_left else 1, 0 if is_top else 1]]])
+        )
+    )
+
+    displacements = points - compare_points
+
+    distances = (displacements ** 2).sum(axis=2) ** 0.5
+    angles = np.arctan2(displacements[:, :, 1], displacements[:, :, 0])
+
+    return distances, angles
 
 
 def perlin(
@@ -24,49 +54,38 @@ def perlin(
                 j * chunk_size:(j + 1) * chunk_size,
             ] = gradient_angles[i, j]
 
-    # Distance vectors from each point the the 4 corners of its chunk
-
-    def _get_node_distances_and_angles(
-        orig: npt.NDArray[np.float_],
-        is_left: bool,
-        is_top: bool,
-    ) -> tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]:
-        points = np.stack(
-            [
-                np.repeat(np.array([range(orig.shape[0])]).T, orig.shape[1], axis=1),
-                np.repeat([range(orig.shape[1])], orig.shape[0], axis=0),
-            ],
-            axis=2
-        )
-
-        assert points.shape == (*orig.shape, 2)
-
-        compare_points = (points // chunk_size) + np.array(
-            np.array([[[0 if is_left else 1, 0 if is_top else 1]]])
-        )
-        displacements = points - compare_points
-
-        distances = (displacements ** 2).sum(axis=2) ** 0.5
-        angles = np.arctan2(displacements[:, :, 1], displacements[:, :, 0])
-
-        return distances, angles
-
     # Dot products between each point and its 4 closest gradient vectors
-    dot_products = []
+    all_dot_products = []
 
     for is_left, is_top in product([True, False], repeat=2):
         distances, angles = _get_node_distances_and_angles(
-            canvas, is_left, is_top
+            canvas, is_left, is_top, chunk_size
         )
 
-        dot_products.append(
-            distances * (
-                np.cos(all_gradient_angles) * np.cos(angles)
-                + np.sin(all_gradient_angles) * np.sin(angles)
-            )
+        dot_products = distances * (
+            np.cos(all_gradient_angles) * np.cos(angles)
+            + np.sin(all_gradient_angles) * np.sin(angles)
         )
 
-    result = np.stack(dot_products, axis=2).sum(axis=2)
+        row_weights = 0.5 * np.cos(
+            np.pi * np.arange(canvas.shape[0]) / chunk_size
+        ) + 0.5
+
+        if not is_top:
+            row_weights = 1 - row_weights
+
+        col_weights = 0.5 * np.cos(
+            np.pi * np.arange(canvas.shape[1]) / chunk_size
+        ) + 0.5
+
+        if not is_left:
+            col_weights = 1 - col_weights
+
+        cell_weights = row_weights.reshape(-1, 1) @ col_weights.reshape(1, -1)
+
+        all_dot_products.append(dot_products * cell_weights)
+
+    result = np.stack(all_dot_products, axis=2).sum(axis=2)
 
     # Return a noise map with values in the interval [0, 255]
     result -= result.min()
@@ -76,4 +95,5 @@ def perlin(
 
 
 if __name__ == "__main__":
+    # TODO: there's something wrong with the smoothing
     perlin(np.zeros((4096, 2304)))

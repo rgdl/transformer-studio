@@ -11,6 +11,7 @@ import streamlit as st
 from PIL import Image
 
 sys.path.append(str(Path(__file__).parent.parent))
+from perlin import CHUNK_SIZE  # type: ignore
 from perlin import perlin  # type: ignore
 
 
@@ -23,8 +24,8 @@ def timer(label: str) -> Generator:
         st.write(f"{label} `{t1 - t0:.02f} seconds`")
 
 
-OUTPUT_SIZE = (4096, 2304)
-CHUNK_SIZE = 256
+#OUTPUT_SIZE = (4096, 2304)
+OUTPUT_SIZE = (CHUNK_SIZE, CHUNK_SIZE * 2)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
 
@@ -52,14 +53,18 @@ def main() -> None:
     with st.sidebar:
         draw_grid = st.checkbox("Draw Grid")
 
+    red = np.zeros(OUTPUT_SIZE)
+    green = np.zeros(OUTPUT_SIZE)
+    blue = np.zeros(OUTPUT_SIZE)
+
     with timer("Red"):
-        red = perlin(np.zeros(OUTPUT_SIZE))
+        red = perlin(red, CHUNK_SIZE)
 
-    with timer("Green"):
-        green = perlin(np.zeros(OUTPUT_SIZE))
+    #with timer("Green"):
+    #    green = perlin(green, CHUNK_SIZE)
 
-    with timer("Blue"):
-        blue = perlin(np.zeros(OUTPUT_SIZE))
+    #with timer("Blue"):
+    #    blue = perlin(blue, CHUNK_SIZE)
 
     if draw_grid:
         with timer("Draw grid"):
@@ -72,6 +77,8 @@ def main() -> None:
 
     st.image(image)
 
+
+# TODO: Work out and fix the weird correlation between colour and grid position
 
 if __name__ == "__main__":
     with timer("Total"):
