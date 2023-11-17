@@ -20,7 +20,6 @@ from utils.consts import RGB
 from utils.shapes import Point
 from utils.shapes import build_shape
 
-# TODO: optimisations for speed!
 # TODO: different agg function to make border less jagged (softer than max)
 
 Number: TypeAlias = np.float_ | np.int_
@@ -42,6 +41,8 @@ class Ray:
     """
 
     pixels: set[Point]
+    outer_pixel: Point
+    inner_pixel: Point
     angle: float
 
     def __hash__(self) -> int:
@@ -62,11 +63,11 @@ class Ray:
 
         colour = 255 * (0.5 + np.sin(2 * np.pi * domain) / 2)
 
-        max_distance_to_center = Point(0, 0).distance(img_center)
+        length = self.inner_pixel.distance(self.outer_pixel)
 
         for p in self.pixels:
             # This is linear - can it be an S-bend?
-            r = p.distance(img_center) / max_distance_to_center
+            r = p.distance(self.inner_pixel) / length
             saturation = 0.5 + np.arctan(A * (r - 0.5)) / np.pi
             image[p.y, p.x] = colour * saturation
 
@@ -122,9 +123,9 @@ def smooth_mat(size: int) -> npt.NDArray[np.float_]:
 
 def blur(x: Array) -> Array:
     cols = st.columns(3)
-    n_small_blur = cols[0].slider("Small Blur", 0, 10, 3)
+    n_small_blur = cols[0].slider("Small Blur", 0, 10, 6)
     n_big_blur = cols[1].slider("Big Blur", 10, 100, 23)
-    n_huge_blur = cols[2].slider("Huge Blur", 100, 1000, 385)
+    n_huge_blur = cols[2].slider("Huge Blur", 100, 1000, 200)
 
     left_smooth_mat = smooth_mat(x.shape[0])
     right_smooth_mat = smooth_mat(x.shape[1])
@@ -231,7 +232,14 @@ def outline(image: Image.Image) -> Image.Image:
                 if current.distance(img_center) < 2:
                     raise ValueError("There's a leak!")
 
-            rays.add(Ray(ray_pixels, np.arctan2(trajectory.y, trajectory.x)))
+            rays.add(
+                Ray(
+                    ray_pixels,
+                    p,
+                    current,
+                    np.arctan2(trajectory.y, trajectory.x),
+                )
+            )
 
             traced_pixels |= ray_pixels
 
@@ -246,9 +254,7 @@ def outline(image: Image.Image) -> Image.Image:
         green = x.copy()
         blue = x.copy()
 
-        # TODO: To make it less of a blob, work from the range between then shape's
-        # TODO: edge and the outside, rather than the center and the outisde
-        r = st.slider("shape", -10.0, 10.0, -3.2)
+        r = st.slider("shape", -10.0, 10.0, -2.0)
 
         for ray in rays:
             red = ray.colour_in(r, red, img_center)

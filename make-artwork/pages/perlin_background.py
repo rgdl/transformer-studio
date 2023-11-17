@@ -34,9 +34,6 @@ def get_grid() -> npt.NDArray[np.int_]:
 
 def main() -> None:
     st.title("Perlin noise for a header image")
-    st.write(
-        "How about an independent layer of noise for each colour channel?"
-    )
 
     with st.sidebar:
         draw_grid = st.checkbox("Draw Grid")
@@ -62,7 +59,7 @@ def main() -> None:
 
     scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1.0, 20.0)
 
-    octave_mix = st.slider("8ve mix", 0.0, 1.0, 0.5)
+    octave_mix = st.slider("8ve mix", 0.0, 1.0, 0.38)
 
     # DO all 3 in one go, then slice into 3rds to put in each channel
     with timer("Perlin"):
