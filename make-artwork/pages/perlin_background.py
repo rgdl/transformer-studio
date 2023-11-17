@@ -24,8 +24,8 @@ def timer(label: str) -> Generator:
         st.write(f"{label} `{t1 - t0:.02f} seconds`")
 
 
-#OUTPUT_SIZE = (4096, 2304)
-OUTPUT_SIZE = (CHUNK_SIZE, CHUNK_SIZE * 2)
+OUTPUT_SIZE = (4096, 2304)
+#OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
 
@@ -60,11 +60,11 @@ def main() -> None:
     with timer("Red"):
         red = perlin(red, CHUNK_SIZE)
 
-    #with timer("Green"):
-    #    green = perlin(green, CHUNK_SIZE)
+    with timer("Green"):
+        green = perlin(green, CHUNK_SIZE)
 
-    #with timer("Blue"):
-    #    blue = perlin(blue, CHUNK_SIZE)
+    with timer("Blue"):
+        blue = perlin(blue, CHUNK_SIZE)
 
     if draw_grid:
         with timer("Draw grid"):

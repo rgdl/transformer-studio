@@ -20,6 +20,7 @@ from shapes import Point
 from shapes import build_shape
 
 # TODO: optimisations for speed!
+# TODO: different agg function to make border less jagged (softer than max)
 
 Number: TypeAlias = np.float_ | np.int_
 Array: TypeAlias = npt.NDArray[Number]
