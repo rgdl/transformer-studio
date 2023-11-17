@@ -1,34 +1,19 @@
-import contextlib
-import sys
-import time
 from itertools import product
-from pathlib import Path
-from typing import Generator
 
-from matplotlib.colors import hsv_to_rgb
+from matplotlib.colors import hsv_to_rgb  # type: ignore
 from matplotlib.colors import rgb_to_hsv
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import streamlit as st
 from PIL import Image
 
-sys.path.append(str(Path(__file__).parent.parent))
-from perlin import CHUNK_SIZE  # type: ignore
-from perlin import perlin  # type: ignore
+from utils import timer
+from utils.perlin import CHUNK_SIZE
+from utils.perlin import perlin
 
 
-@contextlib.contextmanager
-def timer(label: str) -> Generator:
-    t0 = time.time()
-    yield
-    t1 = time.time()
-    with st.sidebar:
-        st.write(f"{label} `{t1 - t0:.02f} seconds`")
-
-
-# OUTPUT_SIZE = (4096, 2304)
-OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
+OUTPUT_SIZE = (4096, 2304)
+# OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
 

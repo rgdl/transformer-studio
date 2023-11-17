@@ -14,10 +14,10 @@ import numpy.typing as npt
 import streamlit as st
 from PIL import Image
 
-from consts import RGB
 from pages.arctangent import expand_to_range
-from shapes import Point
-from shapes import build_shape
+from utils.consts import RGB
+from utils.shapes import Point
+from utils.shapes import build_shape
 
 # TODO: optimisations for speed!
 # TODO: different agg function to make border less jagged (softer than max)

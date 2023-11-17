@@ -7,7 +7,7 @@ from PIL import Image
 from PIL import ImageDraw
 from typing_extensions import Self
 
-from consts import RGBA
+from .consts import RGBA
 
 keys = iter(x for x in range(int(1e6)))
 
