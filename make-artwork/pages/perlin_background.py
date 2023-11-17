@@ -7,6 +7,7 @@ from typing import Generator
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 import streamlit as st
 from PIL import Image
 
@@ -24,8 +25,8 @@ def timer(label: str) -> Generator:
         st.write(f"{label} `{t1 - t0:.02f} seconds`")
 
 
-OUTPUT_SIZE = (4096, 2304)
-#OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
+#OUTPUT_SIZE = (4096, 2304)
+OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
 
@@ -52,19 +53,23 @@ def main() -> None:
 
     with st.sidebar:
         draw_grid = st.checkbox("Draw Grid")
+        red_amount = st.slider("Red", 0.0, 1.0, 1.0)
+        green_amount = st.slider("Green", 0.0, 1.0, 1.0)
+        blue_amount = st.slider("Blue", 0.0, 1.0, 1.0)
 
     red = np.zeros(OUTPUT_SIZE)
     green = np.zeros(OUTPUT_SIZE)
     blue = np.zeros(OUTPUT_SIZE)
 
-    with timer("Red"):
-        red = perlin(red, CHUNK_SIZE)
+    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1, 100)
 
-    with timer("Green"):
-        green = perlin(green, CHUNK_SIZE)
+    # DO all 3 in one go, then slice into 3rds to put in each channel
+    with timer("Perlin"):
+        all_colours = perlin([OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale) * 255
 
-    with timer("Blue"):
-        blue = perlin(blue, CHUNK_SIZE)
+    red = all_colours[:OUTPUT_SIZE[0], :]
+    green = all_colours[OUTPUT_SIZE[0]:2 * OUTPUT_SIZE[0], :]
+    blue = all_colours[2 * OUTPUT_SIZE[0]:, :]
 
     if draw_grid:
         with timer("Draw grid"):
@@ -72,7 +77,14 @@ def main() -> None:
             red = np.stack([red, grid], axis=2).max(axis=2)
 
     image = Image.fromarray(
-        np.stack([red, green, blue], axis=2).astype(np.uint8)
+        np.stack(
+            [
+                red_amount * red,
+                green_amount * green,
+                blue_amount * blue,
+            ],
+            axis=2,
+        ).astype(np.uint8)
     )
 
     st.image(image)

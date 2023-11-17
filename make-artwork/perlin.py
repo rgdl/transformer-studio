@@ -2,59 +2,12 @@ from itertools import product
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import streamlit as st
 
 CHUNK_SIZE = 256
-
-
-def _get_node_distances_and_angles(
-    orig: npt.NDArray[np.float_],
-    is_left: bool,
-    is_top: bool,
-    chunk_size: int,
-) -> tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]:
-    points = np.stack(
-        [
-            np.repeat(np.array([range(orig.shape[0])]).T, orig.shape[1], axis=1),
-            np.repeat([range(orig.shape[1])], orig.shape[0], axis=0),
-        ],
-        axis=2
-    )
-
-    assert points.shape == (*orig.shape, 2)
-
-    compare_points = chunk_size * (
-        (points // chunk_size) + np.array(
-            np.array([[[0 if is_top else 1, 0 if is_left else 1]]])
-        )
-    )
-
-    displacements = points - compare_points
-
-    distances = (displacements ** 2).sum(axis=2) ** 0.5
-
-    # These look like rows and columns, which I think is right
-    #_as_heatmap(points[:, :, 0], "points_i")
-    #_as_heatmap(points[:, :, 1], "points_j")
-
-    # These look like quantised rows and columns, which I think is right
-    #_as_heatmap(compare_points[:, :, 0], "compare_points_i")
-    #_as_heatmap(compare_points[:, :, 1], "compare_points_j")
-
-    # These look right (I think)
-    #_as_heatmap(displacements[:, :, 0], "displacements_i")
-    #_as_heatmap(displacements[:, :, 1], "displacements_j")
-
-    #_as_heatmap(distances, "distances")
-
-    angles = np.arctan2(displacements[:, :, 0], displacements[:, :, 1])
-
-    # Should these be flipped at the horizontal
-    #_as_heatmap(angles, "angles")
-
-    return distances, angles
 
 
 def _as_heatmap(array, title):
@@ -64,86 +17,58 @@ def _as_heatmap(array, title):
     st.pyplot(fig)
 
 
-def smooth_step(x: npt.NDArray[np.float_], chunk_size: int) -> npt.NDArray[np.float_]:
-    x = (x / chunk_size) % 1
-    return 1 - (3 * x ** 2 - 2 * x ** 3)
+def smoothstep(x: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
+    if (x.min() < 0) or (x.max() > 1):
+        st.write(pd.Series(x).describe())
+        raise ValueError("Bad inputs to `smoothstep`")
+
+    return x * x * (3 - 2 * x)
 
 
-def perlin(
-    canvas: npt.NDArray[np.float_],
-    chunk_size: int = CHUNK_SIZE,
-) -> npt.NDArray[np.float_]:
-    grid_size = tuple(s // chunk_size for s in canvas.shape)
+def perlin(shape: tuple[int], scale=1.0):
+    # Generate random gradient vectors for each grid point
+    gradient_shape = (shape[0] + 1, shape[1] + 1, 2)
+    gradients = np.random.normal(size=gradient_shape)
 
-    # Random unit gradient vectors for each grid node
-    gradient_angles = np.random.uniform(0, 2 * np.pi, grid_size)
+    # Generate a grid of coordinates
+    x = np.linspace(0, scale, num=shape[1], endpoint=False)
+    y = np.linspace(0, scale, num=shape[0], endpoint=False)
+    x_grid, y_grid = np.meshgrid(x, y)
 
-    all_gradient_angles = np.zeros_like(canvas)
+    # Calculate the indices of the four nearest grid points
+    x0 = np.floor(x_grid).astype(int)
+    x1 = x0 + 1
+    y0 = np.floor(y_grid).astype(int)
+    y1 = y0 + 1
 
-    for i in range(grid_size[0]):
-        for j in range(grid_size[1]):
-            all_gradient_angles[
-                i * chunk_size:(i + 1) * chunk_size,
-                j * chunk_size:(j + 1) * chunk_size,
-            ] = gradient_angles[i, j]
+    # Calculate the distance vectors from the grid points to the coordinates
+    dx0 = x_grid - x0
+    dx1 = x_grid - x1
+    dy0 = y_grid - y0
+    dy1 = y_grid - y1
 
-    # Dot products between each point and its 4 closest gradient vectors
-    all_dot_products = []
+    # Calculate the dot products between the gradient vectors and the distance vectors
+    dot00 = np.sum(gradients[y0, x0] * np.dstack((dx0, dy0)), axis=2)
+    dot10 = np.sum(gradients[y0, x1] * np.dstack((dx1, dy0)), axis=2)
+    dot01 = np.sum(gradients[y1, x0] * np.dstack((dx0, dy1)), axis=2)
+    dot11 = np.sum(gradients[y1, x1] * np.dstack((dx1, dy1)), axis=2)
 
-    _point_names = {
-        False: {False: "Bottom right", True: "Top right"},
-        True: {False: "Bottom left", True: "Top left"},
-    }
+    # Interpolate the dot product values using smoothstep function
+    u = smoothstep(dx0)
+    v = smoothstep(dy0)
 
-    for is_left, is_top in product([True, False], repeat=2):
-        #st.write(_point_names[is_left][is_top])
+    # Interpolate along the x-axis
+    interpolate0 = dot00 + u * (dot10 - dot00)
+    interpolate1 = dot01 + u * (dot11 - dot01)
 
-        distances, angles = _get_node_distances_and_angles(
-            canvas, is_left, is_top, chunk_size
-        )
+    # Interpolate along the y-axis to get the final noise value
+    final_noise = interpolate0 + v * (interpolate1 - interpolate0)
 
-        dot_products = distances * (
-            np.cos(all_gradient_angles) * np.cos(angles)
-            + np.sin(all_gradient_angles) * np.sin(angles)
-        )
+    final_noise -= final_noise.min()
+    final_noise /= final_noise.max()
 
-        #row_weights = 0.5 * np.cos(
-        #    np.pi * np.arange(canvas.shape[0]) / chunk_size
-        #) + 0.5
-
-        row_weights = smooth_step(np.arange(canvas.shape[0]), chunk_size)
-
-        if not is_top:
-            row_weights = 1 - row_weights
-
-        #col_weights = 0.5 * np.cos(
-        #    np.pi * np.arange(canvas.shape[1]) / chunk_size
-        #) + 0.5
-
-        col_weights = smooth_step(np.arange(canvas.shape[1]), chunk_size)
-
-        if not is_left:
-            col_weights = 1 - col_weights
-
-        cell_weights = row_weights.reshape(-1, 1) @ col_weights.reshape(1, -1)
-
-        all_dot_products.append(dot_products * cell_weights)
-
-        #_as_heatmap(angles, "Angles")
-        #_as_heatmap(dot_products, "Dot Products")
-        #_as_heatmap(cell_weights, "Weights")
-        #_as_heatmap(dot_products * cell_weights, "Weighted dot products")
-
-
-    result = np.stack(all_dot_products, axis=2).sum(axis=2)
-
-    # Return a noise map with values in the interval [0, 255]
-    result -= result.min()
-    result /= result.max()
-    result *= 255
-    return result
+    return final_noise
 
 
 if __name__ == "__main__":
-    # TODO: there's something wrong with the smoothing
-    perlin(np.zeros((4096, 2304)))
+    print(perlin(2, 3))
