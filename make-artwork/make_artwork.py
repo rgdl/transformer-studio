@@ -15,6 +15,7 @@ import streamlit as st
 from PIL import Image
 
 from pages.arctangent import expand_to_range
+from utils import timer
 from utils.consts import RGB
 from utils.shapes import Point
 from utils.shapes import build_shape
@@ -111,58 +112,44 @@ def distance_to_line(p: Point, anchor1: Point, anchor2: Point) -> float:
     return abs(x_delta * (anchor1.y - p.y) - (anchor1.x - p.x) * y_delta)
 
 
+def smooth_mat(size: int) -> npt.NDArray[np.float_]:
+    ident = np.eye(size)
+    pad_ident = np.pad(ident, ((0, 0), (1, 1)))
+    l_shift_ident = pad_ident[:, 2:]
+    r_shift_ident = pad_ident[:, :-2]
+    return (ident + l_shift_ident + r_shift_ident) / 3
+
+
 def blur(x: Array) -> Array:
-    def _smooth(x: Array, n: Array) -> Array:
-        n = np.concatenate([x.reshape(*x.shape, 1), n], axis=2)
-        smoothed = n.mean(axis=2)
-
-        # Bring max back up
-        smoothed *= 255 / smoothed.max()
-
-        return smoothed  # type: ignore
-
-    huge_blur = x.copy()
-    big_blur = x.copy()
-    small_blur = x.copy()
-
     cols = st.columns(3)
     n_small_blur = cols[0].slider("Small Blur", 0, 10, 3)
     n_big_blur = cols[1].slider("Big Blur", 10, 100, 23)
     n_huge_blur = cols[2].slider("Huge Blur", 100, 1000, 385)
 
-    total_blur = n_small_blur + n_big_blur + n_huge_blur
-    pbar = st.progress(0.0)
-    blurs_completed = 0
+    left_smooth_mat = smooth_mat(x.shape[0])
+    right_smooth_mat = smooth_mat(x.shape[1])
 
-    t0 = time.time()
+    with timer("Blur outline"):
+        small_blur = (
+            np.linalg.matrix_power(left_smooth_mat, n_small_blur)
+            @ x @
+            np.linalg.matrix_power(right_smooth_mat, n_small_blur)
+        )
+        small_blur *= 255 / small_blur.max()
 
-    for _ in range(n_small_blur):
-        small_blur = apply_to_neighbourhood(small_blur, _smooth)
-        blurs_completed += 1
-        pbar.progress(blurs_completed / total_blur)
+        big_blur = (
+            np.linalg.matrix_power(left_smooth_mat, n_big_blur)
+            @ x @
+            np.linalg.matrix_power(right_smooth_mat, n_big_blur)
+        )
+        big_blur *= 255 / big_blur.max()
 
-    with st.sidebar:
-        st.write(f"Small blur: `{time.time() - t0:.02f} seconds`")
-
-    t0 = time.time()
-
-    for _ in range(n_big_blur):
-        big_blur = apply_to_neighbourhood(big_blur, _smooth)
-        blurs_completed += 1
-        pbar.progress(blurs_completed / total_blur)
-
-    with st.sidebar:
-        st.write(f"Big blur: `{time.time() - t0:.02f} seconds`")
-
-    t0 = time.time()
-
-    for _ in range(n_huge_blur):
-        huge_blur = apply_to_neighbourhood(huge_blur, _smooth)
-        blurs_completed += 1
-        pbar.progress(blurs_completed / total_blur)
-
-    with st.sidebar:
-        st.write(f"Huge blur: `{time.time() - t0:.02f} seconds`")
+        huge_blur = (
+            np.linalg.matrix_power(left_smooth_mat, n_huge_blur)
+            @ x @
+            np.linalg.matrix_power(right_smooth_mat, n_huge_blur)
+        )
+        huge_blur *= 255 / huge_blur.max()
 
     return np.stack([huge_blur, big_blur, small_blur], axis=2).max(axis=2)
 
@@ -207,75 +194,68 @@ def outline(image: Image.Image) -> Image.Image:
             ).max(axis=2),
         )
 
-    t0 = time.time()
+    with timer("Find rays"):
+        for p in outer_edge_pixels:
+            ray_pixels: set[Point] = set()
 
-    for p in outer_edge_pixels:
-        ray_pixels: set[Point] = set()
+            # Identify where to look for the candidate pixels
+            trajectory = img_center - p
 
-        # Identify where to look for the candidate pixels
-        trajectory = img_center - p
+            x_offset = 1 if trajectory.x > 0 else -1
+            y_offset = 1 if trajectory.y > 0 else -1
 
-        x_offset = 1 if trajectory.x > 0 else -1
-        y_offset = 1 if trajectory.y > 0 else -1
-
-        neighbour_offsets = (
-            Point(x_offset, 0),
-            Point(x_offset, y_offset),
-            Point(0, y_offset),
-        )
-
-        current = p
-
-        while True:
-            if current not in traced_pixels:
-                ray_pixels.add(current)
-
-            candidate_next_pixels = [
-                current + offset for offset in neighbour_offsets
-            ]
-
-            current = min(
-                candidate_next_pixels,
-                key=partial(distance_to_line, anchor1=p, anchor2=img_center),
+            neighbour_offsets = (
+                Point(x_offset, 0),
+                Point(x_offset, y_offset),
+                Point(0, y_offset),
             )
 
-            if edges[current.y, current.x] > 0:
-                break
+            current = p
 
-            if current.distance(img_center) < 2:
-                raise ValueError("There's a leak!")
+            while True:
+                if current not in traced_pixels:
+                    ray_pixels.add(current)
 
-        rays.add(Ray(ray_pixels, np.arctan2(trajectory.y, trajectory.x)))
+                candidate_next_pixels = [
+                    current + offset for offset in neighbour_offsets
+                ]
 
-        traced_pixels |= ray_pixels
+                current = min(
+                    candidate_next_pixels,
+                    key=partial(distance_to_line, anchor1=p, anchor2=img_center),
+                )
 
-        pbar.progress(len(rays) / total)
+                if edges[current.y, current.x] > 0:
+                    break
 
-    with st.sidebar:
-        st.write(f"Find rays: `{time.time() - t0:.02f} seconds`")
+                if current.distance(img_center) < 2:
+                    raise ValueError("There's a leak!")
+
+            rays.add(Ray(ray_pixels, np.arctan2(trajectory.y, trajectory.x)))
+
+            traced_pixels |= ray_pixels
+
+            pbar.progress(len(rays) / total)
 
     blurred_edges = blur(edges)
 
     # Add butterfly to background for each colour channel
 
-    t0 = time.time()
-    red = x.copy()
-    green = x.copy()
-    blue = x.copy()
+    with timer("Colour in"):
+        red = x.copy()
+        green = x.copy()
+        blue = x.copy()
 
-    # TODO: To make it less of a blob, work from the range between then shape's
-    # TODO: edge and the outside, rather than the center and the outisde
-    r = st.slider("shape", -10.0, 10.0, -3.2)
+        # TODO: To make it less of a blob, work from the range between then shape's
+        # TODO: edge and the outside, rather than the center and the outisde
+        r = st.slider("shape", -10.0, 10.0, -3.2)
 
-    for ray in rays:
-        red = ray.colour_in(r, red, img_center)
-        green = ray.colour_in(
-            r, green, img_center, lambda d: (d + (1 / 3)) % 1
-        )
-        blue = ray.colour_in(r, blue, img_center, lambda d: (d + (2 / 3)) % 1)
-
-    with st.sidebar:
-        st.write(f"Colour in: `{time.time() - t0:.02f} seconds`")
+        for ray in rays:
+            red = ray.colour_in(r, red, img_center)
+            green = ray.colour_in(
+                r, green, img_center, lambda d: (d + (1 / 3)) % 1
+            )
+            blue = ray.colour_in(r, blue, img_center, lambda d: (d + (2 / 3)) % 1)
 
         if st.checkbox("Expand to range", value=True):
             red = expand_to_range(red, 0, 255)
@@ -299,16 +279,12 @@ def main() -> None:
 
     icon = Image.new("RGB", (512, 512), RGB.GREY)
 
-    t0 = time.time()
+    with timer("Total"):
+        build_shape(icon)
+        icon = outline(icon)
 
-    build_shape(icon)
-    icon = outline(icon)
-
-    st.image(icon)
-
-    with st.sidebar:
-        st.divider()
-        st.write(f"Total Duration: `{time.time() - t0:.02f} seconds`")
+        st.image(icon)
+        st.sidebar.divider()
 
 
 main()
