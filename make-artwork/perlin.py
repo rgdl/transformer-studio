@@ -25,9 +25,11 @@ def smoothstep(x: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
     return x * x * (3 - 2 * x)
 
 
+@st.cache_data
 def perlin(shape: tuple[int], scale=1.0):
     # Generate random gradient vectors for each grid point
     gradient_shape = (shape[0] + 1, shape[1] + 1, 2)
+    np.random.seed(777)
     gradients = np.random.normal(size=gradient_shape)
 
     # Generate a grid of coordinates

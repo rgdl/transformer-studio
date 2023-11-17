@@ -27,7 +27,7 @@ def timer(label: str) -> Generator:
         st.write(f"{label} `{t1 - t0:.02f} seconds`")
 
 
-#OUTPUT_SIZE = (4096, 2304)
+# OUTPUT_SIZE = (4096, 2304)
 OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
@@ -75,11 +75,22 @@ def main() -> None:
         ).reshape(1, 1, 3)
 
 
-    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1, 100, 20)
+    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1.0, 20.0)
+
+    octave_mix = st.slider("8ve mix", 0.0, 1.0, 0.5)
 
     # DO all 3 in one go, then slice into 3rds to put in each channel
     with timer("Perlin"):
-        all_colours = perlin([OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale)
+        all_colours = np.dstack(
+            [
+                octave_mix * perlin(
+                    [OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale
+                ),
+                (1 - octave_mix) * perlin(
+                    [OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale / 4
+                ),
+            ]
+        ).sum(axis=2)
 
     red = all_colours[:OUTPUT_SIZE[0], :]
     green = all_colours[OUTPUT_SIZE[0]:2 * OUTPUT_SIZE[0], :]
