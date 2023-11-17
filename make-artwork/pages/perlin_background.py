@@ -5,6 +5,8 @@ from itertools import product
 from pathlib import Path
 from typing import Generator
 
+from matplotlib.colors import hsv_to_rgb
+from matplotlib.colors import rgb_to_hsv
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -53,19 +55,31 @@ def main() -> None:
 
     with st.sidebar:
         draw_grid = st.checkbox("Draw Grid")
-        red_amount = st.slider("Red", 0.0, 1.0, 1.0)
-        green_amount = st.slider("Green", 0.0, 1.0, 1.0)
-        blue_amount = st.slider("Blue", 0.0, 1.0, 1.0)
 
-    red = np.zeros(OUTPUT_SIZE)
-    green = np.zeros(OUTPUT_SIZE)
-    blue = np.zeros(OUTPUT_SIZE)
+        cols = st.columns(3)
 
-    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1, 100)
+        colour_weights = np.array(
+            [
+                cols[0].slider("Red", 0.0, 1.0, 1.0),
+                cols[1].slider("Green", 0.0, 1.0, 1.0),
+                cols[2].slider("Blue", 0.0, 1.0, 1.0),
+            ]
+        ).reshape(1, 1, 3)
+
+        hsv_shifts = np.array(
+            [
+                cols[0].slider("Hue Shift", -1.0, 1.0, 0.0),
+                cols[1].slider("Saturation Shift", -1.0, 1.0, 0.0),
+                cols[2].slider("Value Shift", -1.0, 1.0, 0.0),
+            ]
+        ).reshape(1, 1, 3)
+
+
+    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1, 100, 20)
 
     # DO all 3 in one go, then slice into 3rds to put in each channel
     with timer("Perlin"):
-        all_colours = perlin([OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale) * 255
+        all_colours = perlin([OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale)
 
     red = all_colours[:OUTPUT_SIZE[0], :]
     green = all_colours[OUTPUT_SIZE[0]:2 * OUTPUT_SIZE[0], :]
@@ -76,21 +90,20 @@ def main() -> None:
             grid = get_grid()
             red = np.stack([red, grid], axis=2).max(axis=2)
 
-    image = Image.fromarray(
-        np.stack(
-            [
-                red_amount * red,
-                green_amount * green,
-                blue_amount * blue,
-            ],
-            axis=2,
-        ).astype(np.uint8)
-    )
+    image_arr = np.stack([red, green, blue], axis=2) * colour_weights
+
+    assert image_arr.max() <= 1.0
+
+    image_arr_hsv = rgb_to_hsv(image_arr)
+
+    image_arr = hsv_to_rgb((image_arr_hsv + hsv_shifts).clip(min=0, max=1))
+
+    image = Image.fromarray((255 * image_arr).astype(np.uint8))
 
     st.image(image)
 
 
-# TODO: Work out and fix the weird correlation between colour and grid position
+# TODO: what if I generate the layers as hsv, not rgb?
 
 if __name__ == "__main__":
     with timer("Total"):
