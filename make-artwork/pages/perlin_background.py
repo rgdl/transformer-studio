@@ -24,8 +24,8 @@ PARAMS = {
     "scale": 7.5,
 }
 
-OUTPUT_SIZE = (2304, 4096)
-# OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
+#OUTPUT_SIZE = (2304, 4096)
+OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
 
@@ -46,6 +46,7 @@ def get_grid() -> npt.NDArray[np.int_]:
 
 def main() -> Image.Image:
     st.title("Perlin noise for a header image")
+    rust = st.checkbox("Rust")
 
     with st.sidebar:
         draw_grid = st.checkbox("Draw Grid")
@@ -78,10 +79,10 @@ def main() -> Image.Image:
         all_colours = np.dstack(
             [
                 octave_mix * perlin(
-                    [OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale
+                    [OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale, rust
                 ),
                 (1 - octave_mix) * perlin(
-                    [OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale / 4
+                    [OUTPUT_SIZE[0] * 3, OUTPUT_SIZE[1]], scale / 4, rust
                 ),
             ]
         ).sum(axis=2)
