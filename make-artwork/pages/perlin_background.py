@@ -12,7 +12,19 @@ from utils.perlin import CHUNK_SIZE
 from utils.perlin import perlin
 
 
-OUTPUT_SIZE = (4096, 2304)
+# TODO: not for the first transformer studio icon and header, but some time, re-write the perlin generator in rust, so that the compiled binary can be called on to generate the image
+
+PARAMS = {
+    "red": 0.4,
+    "green": 0.77,
+    "blue": 0.83,
+    "hue": 0.26,
+    "saturation": 0.11,
+    "value": 0.25,
+    "scale": 7.5,
+}
+
+OUTPUT_SIZE = (2304, 4096)
 # OUTPUT_SIZE = (CHUNK_SIZE * 2, CHUNK_SIZE * 3)
 
 assert all(s % CHUNK_SIZE == 0 for s in OUTPUT_SIZE)
@@ -32,7 +44,7 @@ def get_grid() -> npt.NDArray[np.int_]:
     return grid  # type: ignore
 
 
-def main() -> None:
+def main() -> Image.Image:
     st.title("Perlin noise for a header image")
 
     with st.sidebar:
@@ -42,22 +54,22 @@ def main() -> None:
 
         colour_weights = np.array(
             [
-                cols[0].slider("Red", 0.0, 1.0, 1.0),
-                cols[1].slider("Green", 0.0, 1.0, 1.0),
-                cols[2].slider("Blue", 0.0, 1.0, 1.0),
+                cols[0].slider("Red", 0.0, 1.0, PARAMS["red"]),
+                cols[1].slider("Green", 0.0, 1.0, PARAMS["green"]),
+                cols[2].slider("Blue", 0.0, 1.0, PARAMS["blue"]),
             ]
         ).reshape(1, 1, 3)
 
         hsv_shifts = np.array(
             [
-                cols[0].slider("Hue Shift", -1.0, 1.0, 0.0),
-                cols[1].slider("Saturation Shift", -1.0, 1.0, 0.0),
-                cols[2].slider("Value Shift", -1.0, 1.0, 0.0),
+                cols[0].slider("Hue Shift", -1.0, 1.0, PARAMS["hue"]),
+                cols[1].slider("Saturation Shift", -1.0, 1.0, PARAMS["saturation"]),
+                cols[2].slider("Value Shift", -1.0, 1.0, PARAMS["value"]),
             ]
         ).reshape(1, 1, 3)
 
 
-    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1.0, 20.0)
+    scale = CHUNK_SIZE / st.sidebar.slider("Scale Factor", 1.0, 20.0, PARAMS["scale"])
 
     octave_mix = st.slider("8ve mix", 0.0, 1.0, 0.38)
 
@@ -93,14 +105,17 @@ def main() -> None:
 
     image = Image.fromarray((255 * image_arr).astype(np.uint8))
 
-    st.image(image)
+    return image
 
 
 # TODO: what if I generate the layers as hsv, not rgb?
 
 if __name__ == "__main__":
     with timer("Total"):
-        main()
+        image = main()
+        st.sidebar.divider()
 
-        with st.sidebar:
-            st.divider()
+    st.image(image)
+
+    if st.button("Save"):
+        image.save("header.jpeg")

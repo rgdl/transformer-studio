@@ -292,5 +292,8 @@ def main() -> None:
         st.image(icon)
         st.sidebar.divider()
 
+    if st.button("Save"):
+        icon.save("icon.png")
+
 
 main()
