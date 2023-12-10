@@ -91,29 +91,58 @@ def perlin(shape: tuple[int, int], scale=1.0, rust: bool = False):
 
     with timer("PERLIN - dot products"):
         # Calculate the dot products between the gradient vectors and the distance vectors
-        dot00 = np.sum(gradients[y0, x0] * np.dstack((dx0, dy0)), axis=2)
-        dot10 = np.sum(gradients[y0, x1] * np.dstack((dx1, dy0)), axis=2)
-        dot01 = np.sum(gradients[y1, x0] * np.dstack((dx0, dy1)), axis=2)
-        dot11 = np.sum(gradients[y1, x1] * np.dstack((dx1, dy1)), axis=2)
+        if rust and False:  # super slow for now, so OK to skip
+            corner00 = np.array(rust_perlin.get_corner_gradients(gradients, y0, x0))
+            corner10 = np.array(rust_perlin.get_corner_gradients(gradients, y0, x1))
+            corner01 = np.array(rust_perlin.get_corner_gradients(gradients, y1, x0))
+            corner11 = np.array(rust_perlin.get_corner_gradients(gradients, y1, x1))
+
+            dist00 = np.array(rust_perlin.stack_arrays(dx0, dy0))
+            dist10 = np.array(rust_perlin.stack_arrays(dx1, dy0))
+            dist01 = np.array(rust_perlin.stack_arrays(dx0, dy1))
+            dist11 = np.array(rust_perlin.stack_arrays(dx1, dy1))
+
+            dot00 = np.array(rust_perlin.dot_product_grid(corner00, dist00))
+            dot10 = np.array(rust_perlin.dot_product_grid(corner10, dist10))
+            dot01 = np.array(rust_perlin.dot_product_grid(corner01, dist01))
+            dot11 = np.array(rust_perlin.dot_product_grid(corner11, dist11))
+
+        else:
+            corner00 = gradients[y0, x0]
+            corner10 = gradients[y0, x1]
+            corner01 = gradients[y1, x0]
+            corner11 = gradients[y1, x1]
+
+            dist00 = np.dstack((dx0, dy0))
+            dist10 = np.dstack((dx1, dy0))
+            dist01 = np.dstack((dx0, dy1))
+            dist11 = np.dstack((dx1, dy1))
+
+            dot00 = np.sum(corner00 * dist00, axis=2)
+            dot10 = np.sum(corner10 * dist10, axis=2)
+            dot01 = np.sum(corner01 * dist01, axis=2)
+            dot11 = np.sum(corner11 * dist11, axis=2)
 
     with timer("PERLIN - interpolation"):
         # Interpolate the dot product values using smoothstep function
         if rust:
-            u = rust_perlin.smoothstep(dx0)
-            v = rust_perlin.smoothstep(dy0)
+            final_noise = rust_perlin.interpolate(
+                dist00, dot00, dot10, dot01, dot11
+            )
+
         else:
             u = smoothstep(dx0)
             v = smoothstep(dy0)
 
-        # Interpolate along the x-axis
-        interpolate0 = dot00 + u * (dot10 - dot00)
-        interpolate1 = dot01 + u * (dot11 - dot01)
+            # Interpolate along the x-axis
+            interpolate0 = dot00 + u * (dot10 - dot00)
+            interpolate1 = dot01 + u * (dot11 - dot01)
 
-        # Interpolate along the y-axis to get the final noise value
-        final_noise = interpolate0 + v * (interpolate1 - interpolate0)
+            # Interpolate along the y-axis to get the final noise value
+            final_noise = interpolate0 + v * (interpolate1 - interpolate0)
 
-        final_noise -= final_noise.min()
-        final_noise /= final_noise.max()
+            final_noise -= final_noise.min()
+            final_noise /= final_noise.max()
 
     st.sidebar.divider()
     return final_noise

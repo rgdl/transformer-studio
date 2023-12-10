@@ -26,6 +26,23 @@ fn smoothstep(x: Array) -> Array {
     ).collect()
 }
 
+// TODO turn on strict linting, write doc strings, more abstractions. Once I know exactly what kind
+// of functionality I need, switch to a 3rd party crate for data structures etc.
+
+fn dot_product(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
+    vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum()
+}
+
+#[pyfunction]
+fn dot_product_grid(grid1: Tensor3, grid2: Tensor3) -> Array {
+    grid1.iter().zip(grid2.iter()).map(
+        |(row1, row2)| row1.iter().zip(row2.iter()).map(
+            |(vec1, vec2)| dot_product(vec1, vec2)
+        ).collect()
+    ).collect()
+}
+
+
 #[pyfunction]
 fn random_normal(rows: usize, cols: usize) -> Tensor3 {
     let seed: [u8; 32] = [1; 32];
@@ -45,6 +62,8 @@ fn random_normal(rows: usize, cols: usize) -> Tensor3 {
 
     result
 }
+
+// TODO: any for loops that can be refactored to iter() patterns
 
 #[pyfunction]
 fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
@@ -98,6 +117,54 @@ fn add_grid(grid1: Array, grid2: Array) -> Array {
     ).collect()
 }
 
+#[pyfunction]
+fn get_corner_gradients(gradients: Tensor3, quantised_rows: IntArray, quantised_cols: IntArray) -> Tensor3 {
+    let n_rows = quantised_rows.len();
+    let n_cols = quantised_rows[0].len();
+
+    let mut result = Vec::with_capacity(n_rows);
+
+    // TODO: do this with zips/iters instead?
+    for r in 0..n_rows {
+        let mut row = Vec::with_capacity(n_cols);
+
+        for c in 0..n_cols {
+            let y0 = quantised_rows[r][c] as usize;
+            let x0 = quantised_cols[r][c] as usize;
+            row.push(gradients[y0][x0].clone());
+        }
+
+        result.push(row);
+    }
+
+    result
+}
+
+#[pyfunction]
+fn stack_arrays(array1: Array, array2: Array) -> Tensor3 {
+    let n_rows = array1.len();
+    let n_cols = array1[0].len();
+
+    if n_rows != array2.len() || n_cols != array2[0].len() {
+        panic!("Array shapes must match!");
+    }
+
+    // TODO: do this with zips/iters instead?
+    let mut result = Vec::with_capacity(n_rows);
+
+    for r in 0..n_rows {
+        let mut row = Vec::with_capacity(n_cols);
+
+        for c in 0..n_cols {
+            row.push(vec![array1[r][c], array2[r][c]]);
+        }
+
+        result.push(row);
+    }
+
+    result
+}
+
 //#[pyfunction]
 //fn multiply_grid(scalar: Num32, grid: AnyArray) -> Array {
 //    grid.iter().map(
@@ -115,6 +182,9 @@ fn rust_perlin(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(quantise_grid, m)?)?;
     m.add_function(wrap_pyfunction!(multiply_grid, m)?)?;
     m.add_function(wrap_pyfunction!(add_grid, m)?)?;
+    m.add_function(wrap_pyfunction!(get_corner_gradients, m)?)?;
+    m.add_function(wrap_pyfunction!(stack_arrays, m)?)?;
+    m.add_function(wrap_pyfunction!(dot_product_grid, m)?)?;
 
     Ok(())
 }
