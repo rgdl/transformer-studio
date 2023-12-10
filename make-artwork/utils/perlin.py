@@ -37,7 +37,7 @@ def get_gradients(shape: tuple[int, int]) -> npt.NDArray[np.float_]:
 #@st.cache_data
 def perlin(shape: tuple[int, int], scale=1.0, rust: bool = False):
     with timer("PERLIN - generate_gradients"):
-        if rust:
+        if rust and False:
             gradients = np.array(rust_perlin.random_normal(*shape))
         else:
             gradients = get_gradients(shape)
@@ -51,19 +51,43 @@ def perlin(shape: tuple[int, int], scale=1.0, rust: bool = False):
             y = np.linspace(0, scale, num=shape[0], endpoint=False)
             x_grid, y_grid = np.meshgrid(x, y)
 
+    with timer("PERLIN - indices"):
+        # Calculate the indices of the four nearest grid points
+        if rust:
+            x0 = np.array(rust_perlin.quantise_grid(x_grid, quantise_up=False))
+            x1 = np.array(rust_perlin.quantise_grid(x_grid, quantise_up=True))
+            y0 = np.array(rust_perlin.quantise_grid(y_grid, quantise_up=False))
+            y1 = np.array(rust_perlin.quantise_grid(y_grid, quantise_up=True))
+        else:
+            x0 = np.floor(x_grid).astype(int)
+            x1 = x0 + 1
+            y0 = np.floor(y_grid).astype(int)
+            y1 = y0 + 1
 
     with timer("PERLIN - distance vectors"):
-        # Calculate the indices of the four nearest grid points
-        x0 = np.floor(x_grid).astype(int)
-        x1 = x0 + 1
-        y0 = np.floor(y_grid).astype(int)
-        y1 = y0 + 1
-
         # Calculate the distance vectors from the grid points to the coordinates
-        dx0 = x_grid - x0
-        dx1 = x_grid - x1
-        dy0 = y_grid - y0
-        dy1 = y_grid - y1
+        if rust:
+            dx0 = rust_perlin.add_grid(
+                x_grid,
+                rust_perlin.multiply_grid(-1, x0),
+            )
+            dx1 = rust_perlin.add_grid(
+                x_grid,
+                rust_perlin.multiply_grid(-1, x1),
+            )
+            dy0 = rust_perlin.add_grid(
+                y_grid,
+                rust_perlin.multiply_grid(-1, y0),
+            )
+            dy1 = rust_perlin.add_grid(
+                y_grid,
+                rust_perlin.multiply_grid(-1, y1),
+            )
+        else:
+            dx0 = x_grid - x0
+            dx1 = x_grid - x1
+            dy0 = y_grid - y0
+            dy1 = y_grid - y1
 
     with timer("PERLIN - dot products"):
         # Calculate the dot products between the gradient vectors and the distance vectors
