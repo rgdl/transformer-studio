@@ -26,18 +26,70 @@ fn smoothstep(x: Array) -> Array {
     ).collect()
 }
 
+#[pyfunction]
+fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array, dot11: Array) -> Array {
+    let u = smoothstep(dx0);
+    let v = smoothstep(dy0);
+
+    let interpolate0 = add_grid(
+        dot00.clone(),
+        hadamard_product(u.clone(), subtract_grid(dot10, dot00.clone())),
+    );
+
+    let interpolate1 = add_grid(
+        dot01.clone(),
+        hadamard_product(u, subtract_grid(dot11, dot01.clone())),
+    );
+
+    let mut final_noise = add_grid(
+        interpolate0.clone(),
+        hadamard_product(v, subtract_grid(interpolate1, interpolate0.clone())),
+    );
+
+    let (min, max) = grid_min_max(final_noise.clone());
+
+    final_noise.iter().map(
+        |row| row.iter().map(
+            |x| (x - min) / (max - min)
+        ).collect()
+    ).collect()
+}
+
+fn grid_min_max(grid: Array) -> (f32, f32) {
+    let mut min = grid[0][0];
+    let mut max = grid[0][0];
+
+    for row in grid {
+        for val in row {
+            if val < min { min = val }
+            if val > max { max = val }
+        }
+    }
+
+    (min, max)
+}
+
 // TODO turn on strict linting, write doc strings, more abstractions. Once I know exactly what kind
 // of functionality I need, switch to a 3rd party crate for data structures etc.
+// TODO: definitely try to abstract away iteration over a whole Array or pair of Arrays
 
 fn dot_product(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
     vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum()
+}
+
+fn hadamard_product(array1: Array, array2: Array) -> Array {
+    array1.iter().zip(array2.iter()).map(
+        |(row1, row2)| row1.iter().zip(row2.iter()).map(
+            |(a, b)| a * b
+        ).collect()
+    ).collect()
 }
 
 #[pyfunction]
 fn dot_product_grid(grid1: Tensor3, grid2: Tensor3) -> Array {
     grid1.iter().zip(grid2.iter()).map(
         |(row1, row2)| row1.iter().zip(row2.iter()).map(
-            |(vec1, vec2)| dot_product(vec1, vec2)
+            |(&ref vec1, &ref vec2)| dot_product(vec1, vec2)
         ).collect()
     ).collect()
 }
@@ -64,6 +116,7 @@ fn random_normal(rows: usize, cols: usize) -> Tensor3 {
 }
 
 // TODO: any for loops that can be refactored to iter() patterns
+// TODO: reduce cloning once it's all in rust
 
 #[pyfunction]
 fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
@@ -115,6 +168,10 @@ fn add_grid(grid1: Array, grid2: Array) -> Array {
             |(val1, val2)| val1 + val2
         ).collect()
     ).collect()
+}
+
+fn subtract_grid(grid1: Array, grid2: Array) -> Array {
+    add_grid(grid1, multiply_grid(-1.0, grid2))
 }
 
 #[pyfunction]
@@ -185,6 +242,7 @@ fn rust_perlin(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_corner_gradients, m)?)?;
     m.add_function(wrap_pyfunction!(stack_arrays, m)?)?;
     m.add_function(wrap_pyfunction!(dot_product_grid, m)?)?;
+    m.add_function(wrap_pyfunction!(interpolate, m)?)?;
 
     Ok(())
 }

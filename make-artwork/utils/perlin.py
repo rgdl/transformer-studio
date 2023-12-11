@@ -126,9 +126,9 @@ def perlin(shape: tuple[int, int], scale=1.0, rust: bool = False):
     with timer("PERLIN - interpolation"):
         # Interpolate the dot product values using smoothstep function
         if rust:
-            final_noise = rust_perlin.interpolate(
-                dist00, dot00, dot10, dot01, dot11
-            )
+            final_noise = np.array(rust_perlin.interpolate(
+                dx0, dy0, dot00, dot10, dot01, dot11
+            ))
 
         else:
             u = smoothstep(dx0)
