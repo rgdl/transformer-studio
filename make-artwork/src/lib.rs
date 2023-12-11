@@ -1,6 +1,11 @@
+use std::time::SystemTime;
+
 use pyo3::prelude::*;
 use rand::{SeedableRng, rngs::StdRng};
 use rand_distr::{Normal, Distribution};
+
+// Currently running slower than the python equivalent, possibly due to the overhead of moving data
+// between processes. Would be good to profile it, use parallelisation, etc.
 
 enum Num32 {
     Integer(i32),
@@ -8,7 +13,7 @@ enum Num32 {
 }
 
 type Array = Vec<Vec<f32>>;
-type IntArray = Vec<Vec<i32>>;
+type UsizeArray = Vec<Vec<usize>>;
 type AnyArray = Vec<Vec<Num32>>;
 type Tensor3 = Vec<Vec<Vec<f32>>>;
 
@@ -131,11 +136,11 @@ fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
     (x_grid, y_grid)
 }
 
-fn quantise_grid(grid: &Array, quantise_up: bool) -> IntArray {
+fn quantise_grid(grid: &Array, quantise_up: bool) -> UsizeArray {
     grid.iter().map(
         |row| row.iter().map(
             // N.B. val.ceil() rounded up ~0 to 1, hence using val.floor() + 1.0
-            |val| if quantise_up { val.floor() as i32 + 1 } else { val.floor() as i32}
+            |val| if quantise_up { val.floor() as usize + 1 } else { val.floor() as usize}
         ).collect()
     ).collect()
 }
@@ -150,7 +155,7 @@ fn multiply_grid(scalar: f32, grid: &Array) -> Array {
     ).collect()
 }
 
-fn multiply_int_grid(scalar: f32, grid: &IntArray) -> Array {
+fn multiply_int_grid(scalar: f32, grid: &UsizeArray) -> Array {
     grid.iter().map(
         |row| row.iter().map(
             |&val| scalar * val as f32
@@ -174,26 +179,14 @@ fn subtract_grid(grid1: &Array, grid2: &Array) -> Array {
     add_grid(&grid1, &multiply_grid(-1.0, &grid2))
 }
 
-fn get_corner_gradients(gradients: &Tensor3, quantised_rows: &IntArray, quantised_cols: &IntArray) -> Tensor3 {
-    let n_rows = quantised_rows.len();
-    let n_cols = quantised_rows[0].len();
-
-    let mut result = Vec::with_capacity(n_rows);
-
-    // TODO: do this with zips/iters instead?
-    for r in 0..n_rows {
-        let mut row = Vec::with_capacity(n_cols);
-
-        for c in 0..n_cols {
-            let y0 = quantised_rows[r][c] as usize;
-            let x0 = quantised_cols[r][c] as usize;
-            row.push(gradients[y0][x0].clone());
-        }
-
-        result.push(row);
-    }
-
-    result
+// TODO: slowest function
+//
+fn get_corner_gradients(gradients: &Tensor3, quantised_rows: &UsizeArray, quantised_cols: &UsizeArray) -> Tensor3 {
+    quantised_rows.iter().zip(quantised_cols.iter()).map(
+        |(qr_row, qc_row)| qr_row.iter().zip(qc_row.iter()).map(
+            |(qr_val, qc_val)| gradients[*qr_val][*qc_val].clone()
+        ).collect()
+    ).collect()
 }
 
 fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
@@ -222,9 +215,18 @@ fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
 
 #[pyfunction]
 fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
+    let mut t0 = SystemTime::now();
+
     let gradients = random_normal(rows, cols);
 
+    println!("***");
+    println!("get gradients: {:?}", SystemTime::now().duration_since(t0));
+    let mut t0 = SystemTime::now();
+
     let (x_grid, y_grid) = make_grids(rows, cols, scale);
+
+    println!("make_grids: {:?}", SystemTime::now().duration_since(t0));
+    let mut t0 = SystemTime::now();
 
     // Indices for nearest grid points
 
@@ -233,6 +235,9 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     let y0 = quantise_grid(&y_grid, false);
     let y1 = quantise_grid(&y_grid, true);
 
+    println!("quantise_grid: {:?}", SystemTime::now().duration_since(t0));
+    let mut t0 = SystemTime::now();
+
     // Calculate the distance vectors from the grid points to the coordinates
 
     let dx0 = add_grid(&x_grid, &multiply_int_grid(-1.0, &x0));
@@ -240,7 +245,11 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     let dy0 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y0));
     let dy1 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y1));
 
+    println!("distance vectors: {:?}", SystemTime::now().duration_since(t0));
+    let mut t0 = SystemTime::now();
+
     // Calculate the dot products between the gradient vectors and the distance vectors
+    // TODO: this is the slow bit (mainly get_corner_gradients)
     let dot00 = dot_product_grid(
         get_corner_gradients(&gradients, &y0, &x0), stack_arrays(&dx0, &dy0)
     );
@@ -257,8 +266,13 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
         get_corner_gradients(&gradients, &y1, &x1), stack_arrays(&dx1, &dy1)
     );
 
-    interpolate(dx0, dy0, dot00, dot10, dot01, dot11)
+    println!("dot products: {:?}", SystemTime::now().duration_since(t0));
+    let mut t0 = SystemTime::now();
 
+    let final_noise = interpolate(dx0, dy0, dot00, dot10, dot01, dot11);
+
+    println!("interpolate: {:?}", SystemTime::now().duration_since(t0));
+    final_noise
 }
 
 #[pymodule]
