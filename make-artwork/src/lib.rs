@@ -3,31 +3,32 @@ use std::time::SystemTime;
 use pyo3::prelude::*;
 use rand::{SeedableRng, rngs::StdRng};
 use rand_distr::{Normal, Distribution};
+use rayon::prelude::*;
 
 // Currently running slower than the python equivalent, possibly due to the overhead of moving data
 // between processes. Would be good to profile it, use parallelisation, etc.
 
-enum Num32 {
-    Integer(i32),
-    Float(f32),
-}
+//enum Num32 {
+//    Integer(i32),
+//    Float(f32),
+//}
 
 type Array = Vec<Vec<f32>>;
 type UsizeArray = Vec<Vec<usize>>;
-type AnyArray = Vec<Vec<Num32>>;
+// type AnyArray = Vec<Vec<Num32>>;
 type Tensor3 = Vec<Vec<Vec<f32>>>;
 
-fn apply<T, R, F>(array: &Vec<Vec<T>>, func: F) -> Vec<Vec<R>>
+fn apply<T: Sync + Send, R: Sync + Send, F: Sync + Send>(array: &Vec<Vec<T>>, func: F) -> Vec<Vec<R>>
 where F: Fn(&T) -> R, {
-    array.iter().map(
-        |row| row.iter().map(|val| func(&val)).collect()
+    array.par_iter().map(
+        |row| row.par_iter().map(|val| func(&val)).collect()
     ).collect()
 }
 
-fn zip_apply<T, R, F>(array1: &Vec<Vec<T>>, array2: &Vec<Vec<T>>, func: F) -> Vec<Vec<R>>
+fn zip_apply<T: Sync + Send, R: Sync + Send, F: Sync + Send>(array1: &Vec<Vec<T>>, array2: &Vec<Vec<T>>, func: F) -> Vec<Vec<R>>
 where F: Fn(&T, &T) -> R, {
-    array1.iter().zip(array2.iter()).map(
-        |(row1, row2)| row1.iter().zip(row2.iter()).map(
+    array1.par_iter().zip(array2.par_iter()).map(
+        |(row1, row2)| row1.par_iter().zip(row2.par_iter()).map(
             |(val1, val2)| func(val1, val2)
         ).collect()
     ).collect()
@@ -87,7 +88,7 @@ fn grid_min_max(grid: &Array) -> (f32, f32) {
 // of functionality I need, switch to a 3rd party crate for data structures etc.
 
 fn dot_product(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
-    vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum()
+    vec1.par_iter().zip(vec2.par_iter()).map(|(a, b)| a * b).sum()
 }
 
 fn hadamard_product(array1: &Array, array2: &Array) -> Array {
