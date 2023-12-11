@@ -17,16 +17,25 @@ type UsizeArray = Vec<Vec<usize>>;
 type AnyArray = Vec<Vec<Num32>>;
 type Tensor3 = Vec<Vec<Vec<f32>>>;
 
-fn apply<F>(array: Array, func: F) -> Array
-where F: Fn(&f32) -> f32, {
+fn apply<T, R, F>(array: &Vec<Vec<T>>, func: F) -> Vec<Vec<R>>
+where F: Fn(&T) -> R, {
     array.iter().map(
-        |row| row.iter().map(|val| func(val)).collect()
+        |row| row.iter().map(|val| func(&val)).collect()
+    ).collect()
+}
+
+fn zip_apply<T, R, F>(array1: &Vec<Vec<T>>, array2: &Vec<Vec<T>>, func: F) -> Vec<Vec<R>>
+where F: Fn(&T, &T) -> R, {
+    array1.iter().zip(array2.iter()).map(
+        |(row1, row2)| row1.iter().zip(row2.iter()).map(
+            |(val1, val2)| func(val1, val2)
+        ).collect()
     ).collect()
 }
 
 fn smoothstep(x: Array) -> Array {
     apply(
-        x, 
+        &x, 
         |&i| {
             if i < 0.0 || i > 1.0 {
                 panic!("Value {} is out of range", i);
@@ -57,7 +66,7 @@ fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array,
 
     let (min, max) = grid_min_max(&final_noise);
 
-    apply(final_noise, |x| (x - min) / (max - min))
+    apply(&final_noise, |x| (x - min) / (max - min))
 }
 
 fn grid_min_max(grid: &Array) -> (f32, f32) {
@@ -76,28 +85,18 @@ fn grid_min_max(grid: &Array) -> (f32, f32) {
 
 // TODO turn on strict linting, write doc strings, more abstractions. Once I know exactly what kind
 // of functionality I need, switch to a 3rd party crate for data structures etc.
-// TODO: definitely try to abstract away iteration over a whole Array or pair of Arrays
 
 fn dot_product(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
     vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum()
 }
 
 fn hadamard_product(array1: &Array, array2: &Array) -> Array {
-    array1.iter().zip(array2.iter()).map(
-        |(row1, row2)| row1.iter().zip(row2.iter()).map(
-            |(a, b)| a * b
-        ).collect()
-    ).collect()
+    zip_apply(array1, array2, |a, b| a * b)
 }
 
 fn dot_product_grid(grid1: Tensor3, grid2: Tensor3) -> Array {
-    grid1.iter().zip(grid2.iter()).map(
-        |(row1, row2)| row1.iter().zip(row2.iter()).map(
-            |(&ref vec1, &ref vec2)| dot_product(vec1, vec2)
-        ).collect()
-    ).collect()
+    zip_apply(&grid1, &grid2, |&ref vec1, &ref vec2| dot_product(vec1, vec2))
 }
-
 
 fn random_normal(rows: usize, cols: usize) -> Tensor3 {
     let seed: [u8; 32] = [1; 32];
@@ -118,9 +117,6 @@ fn random_normal(rows: usize, cols: usize) -> Tensor3 {
     result
 }
 
-// TODO: any for loops that can be refactored to iter() patterns
-// TODO: reduce cloning once it's all in rust
-
 fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
     let x_row: Vec<f32> = (0..cols).map(|i| scale * (i as f32) / (cols as f32)).collect();
 
@@ -139,30 +135,24 @@ fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
 }
 
 fn quantise_grid(grid: &Array, quantise_up: bool) -> UsizeArray {
-    grid.iter().map(
-        |row| row.iter().map(
-            // N.B. val.ceil() rounded up ~0 to 1, hence using val.floor() + 1.0
-            |val| if quantise_up { val.floor() as usize + 1 } else { val.floor() as usize}
-        ).collect()
-    ).collect()
+    apply(
+        grid,
+        |val| if quantise_up {
+            val.floor() as usize + 1
+        } else {
+            val.floor() as usize
+        },
+    )
 }
 
 // TODO: once we've got the whole thing moved to rust, do a clever version using enums that can
 // contain either floats or ints
 fn multiply_grid(scalar: f32, grid: &Array) -> Array {
-    grid.iter().map(
-        |row| row.iter().map(
-            |val| scalar * val
-        ).collect()
-    ).collect()
+    apply(grid, |val| scalar * val)
 }
 
 fn multiply_int_grid(scalar: f32, grid: &UsizeArray) -> Array {
-    grid.iter().map(
-        |row| row.iter().map(
-            |&val| scalar * val as f32
-        ).collect()
-    ).collect()
+    apply(&grid, |&val| scalar * val as f32)
 }
 
 fn add_grid(grid1: &Array, grid2: &Array) -> Array {
@@ -170,11 +160,7 @@ fn add_grid(grid1: &Array, grid2: &Array) -> Array {
         panic!("Mismatching grid shapes");
     }
 
-    grid1.iter().zip(grid2.iter()).map(
-        |(row1, row2)| row1.iter().zip(row2.iter()).map(
-            |(val1, val2)| val1 + val2
-        ).collect()
-    ).collect()
+    zip_apply(&grid1, &grid2, |val1, val2| val1 + val2)
 }
 
 fn subtract_grid(grid1: &Array, grid2: &Array) -> Array {
@@ -184,11 +170,11 @@ fn subtract_grid(grid1: &Array, grid2: &Array) -> Array {
 // TODO: slowest function
 //
 fn get_corner_gradients(gradients: &Tensor3, quantised_rows: &UsizeArray, quantised_cols: &UsizeArray) -> Tensor3 {
-    quantised_rows.iter().zip(quantised_cols.iter()).map(
-        |(qr_row, qc_row)| qr_row.iter().zip(qc_row.iter()).map(
-            |(qr_val, qc_val)| gradients[*qr_val][*qc_val].clone()
-        ).collect()
-    ).collect()
+    zip_apply(
+        &quantised_rows,
+        &quantised_cols, 
+        |qr_val, qc_val| gradients[*qr_val][*qc_val].clone()
+    )
 }
 
 fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
@@ -199,20 +185,7 @@ fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
         panic!("Array shapes must match!");
     }
 
-    // TODO: do this with zips/iters instead?
-    let mut result = Vec::with_capacity(n_rows);
-
-    for r in 0..n_rows {
-        let mut row = Vec::with_capacity(n_cols);
-
-        for c in 0..n_cols {
-            row.push(vec![array1[r][c], array2[r][c]]);
-        }
-
-        result.push(row);
-    }
-
-    result
+    zip_apply(&array1, &array2, |a, b| vec![*a, *b])
 }
 
 #[pyfunction]
