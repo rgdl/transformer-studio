@@ -197,12 +197,12 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
 
     println!("***");
     println!("get gradients: {:?}", SystemTime::now().duration_since(t0));
-    let mut t0 = SystemTime::now();
+    t0 = SystemTime::now();
 
     let (x_grid, y_grid) = make_grids(rows, cols, scale);
 
     println!("make_grids: {:?}", SystemTime::now().duration_since(t0));
-    let mut t0 = SystemTime::now();
+    t0 = SystemTime::now();
 
     // Indices for nearest grid points
 
@@ -212,7 +212,7 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     let y1 = quantise_grid(&y_grid, true);
 
     println!("quantise_grid: {:?}", SystemTime::now().duration_since(t0));
-    let mut t0 = SystemTime::now();
+    t0 = SystemTime::now();
 
     // Calculate the distance vectors from the grid points to the coordinates
 
@@ -222,9 +222,10 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     let dy1 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y1));
 
     println!("distance vectors: {:?}", SystemTime::now().duration_since(t0));
-    let mut t0 = SystemTime::now();
+    t0 = SystemTime::now();
 
     // Calculate the dot products between the gradient vectors and the distance vectors
+
     // TODO: this is the slow bit (mainly get_corner_gradients)
     let dot00 = dot_product_grid(
         get_corner_gradients(&gradients, &y0, &x0),
@@ -251,7 +252,7 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     );
 
     println!("dot products: {:?}", SystemTime::now().duration_since(t0));
-    let mut t0 = SystemTime::now();
+    t0 = SystemTime::now();
 
     let final_noise = interpolate(dx0, dy0, dot00, dot10, dot01, dot11);
 
