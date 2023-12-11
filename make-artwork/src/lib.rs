@@ -17,17 +17,23 @@ type UsizeArray = Vec<Vec<usize>>;
 type AnyArray = Vec<Vec<Num32>>;
 type Tensor3 = Vec<Vec<Vec<f32>>>;
 
-fn smoothstep(x: Array) -> Array {
-    x.iter().map(
-        |row| row.iter().map(
-            |&i| {
-                if i < 0.0 || i > 1.0 {
-                    panic!("Value {} is out of range", i);
-                }
-                i * i * (3.0 - 2.0 * i)
-            }
-        ).collect()
+fn apply<F>(array: Array, func: F) -> Array
+where F: Fn(&f32) -> f32, {
+    array.iter().map(
+        |row| row.iter().map(|val| func(val)).collect()
     ).collect()
+}
+
+fn smoothstep(x: Array) -> Array {
+    apply(
+        x, 
+        |&i| {
+            if i < 0.0 || i > 1.0 {
+                panic!("Value {} is out of range", i);
+            }
+            i * i * (3.0 - 2.0 * i)
+        },
+    )
 }
 
 fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array, dot11: Array) -> Array {
@@ -51,11 +57,7 @@ fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array,
 
     let (min, max) = grid_min_max(&final_noise);
 
-    final_noise.iter().map(
-        |row| row.iter().map(
-            |x| (x - min) / (max - min)
-        ).collect()
-    ).collect()
+    apply(final_noise, |x| (x - min) / (max - min))
 }
 
 fn grid_min_max(grid: &Array) -> (f32, f32) {
