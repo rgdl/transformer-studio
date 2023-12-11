@@ -95,8 +95,8 @@ fn hadamard_product(array1: &Array, array2: &Array) -> Array {
     zip_apply(array1, array2, |a, b| a * b)
 }
 
-fn dot_product_grid(grid1: Tensor3, grid2: Tensor3) -> Array {
-    zip_apply(&grid1, &grid2, |&ref vec1, &ref vec2| dot_product(vec1, vec2))
+fn dot_product_grid(grid1: Vec<Vec<&Vec<f32>>>, grid2: Vec<Vec<&Vec<f32>>>) -> Array {
+    zip_apply(&grid1, &grid2, |&vec1, &vec2| dot_product(vec1, vec2))
 }
 
 fn random_normal(rows: usize, cols: usize) -> Tensor3 {
@@ -170,11 +170,11 @@ fn subtract_grid(grid1: &Array, grid2: &Array) -> Array {
 
 // TODO: slowest function
 //
-fn get_corner_gradients(gradients: &Tensor3, quantised_rows: &UsizeArray, quantised_cols: &UsizeArray) -> Tensor3 {
+fn get_corner_gradients<'a>(gradients: &'a Tensor3, quantised_rows: &UsizeArray, quantised_cols: &UsizeArray) -> Vec<Vec<&'a Vec<f32>>> {
     zip_apply(
         &quantised_rows,
         &quantised_cols, 
-        |qr_val, qc_val| gradients[*qr_val][*qc_val].clone()
+        |qr_val, qc_val| &gradients[*qr_val][*qc_val]
     )
 }
 
@@ -227,19 +227,27 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     // Calculate the dot products between the gradient vectors and the distance vectors
     // TODO: this is the slow bit (mainly get_corner_gradients)
     let dot00 = dot_product_grid(
-        get_corner_gradients(&gradients, &y0, &x0), stack_arrays(&dx0, &dy0)
+        get_corner_gradients(&gradients, &y0, &x0),
+        // Turn inner vectors into references
+        stack_arrays(&dx0, &dy0).iter().map(|row| row.iter().collect()).collect()
     );
 
     let dot10 = dot_product_grid(
-        get_corner_gradients(&gradients, &y0, &x1), stack_arrays(&dx1, &dy0)
+        get_corner_gradients(&gradients, &y0, &x1),
+        // Turn inner vectors into references
+        stack_arrays(&dx1, &dy0).iter().map(|row| row.iter().collect()).collect()
     );
 
     let dot01 = dot_product_grid(
-        get_corner_gradients(&gradients, &y1, &x0), stack_arrays(&dx0, &dy1)
+        get_corner_gradients(&gradients, &y1, &x0),
+        // Turn inner vectors into references
+        stack_arrays(&dx0, &dy1).iter().map(|row| row.iter().collect()).collect()
     );
 
     let dot11 = dot_product_grid(
-        get_corner_gradients(&gradients, &y1, &x1), stack_arrays(&dx1, &dy1)
+        get_corner_gradients(&gradients, &y1, &x1),
+        // Turn inner vectors into references
+        stack_arrays(&dx1, &dy1).iter().map(|row| row.iter().collect()).collect()
     );
 
     println!("dot products: {:?}", SystemTime::now().duration_since(t0));
