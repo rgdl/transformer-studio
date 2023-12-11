@@ -46,7 +46,7 @@ def get_grid() -> npt.NDArray[np.int_]:
 
 def main() -> Image.Image:
     st.title("Perlin noise for a header image")
-    rust = st.checkbox("Rust")
+    rust = st.checkbox("Rust", value=True)
 
     with st.sidebar:
         draw_grid = st.checkbox("Draw Grid")

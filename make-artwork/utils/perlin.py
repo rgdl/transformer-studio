@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 import rust_perlin
+from utils import timer
 
 CHUNK_SIZE = 256
 
@@ -36,13 +37,14 @@ def get_gradients(shape: tuple[int, int]) -> npt.NDArray[np.float_]:
 
 #@st.cache_data
 def perlin(shape: tuple[int, int], scale=1.0, rust: bool = False):
-    if rust and False:
-        gradients = np.array(rust_perlin.random_normal(*shape))
-    else:
-        gradients = get_gradients(shape)
-
     if rust:
-        return np.array(rust_perlin.perlin(gradients, scale))
+        with timer("rust"):
+            final_noise = rust_perlin.perlin(*shape, scale)
+        with timer("to numpy"):
+            return np.array(final_noise)
+
+    # Random gradients
+    gradients = get_gradients(shape)
 
     # Generate a grid of coordinates
     x = np.linspace(0, scale, num=shape[1], endpoint=False)

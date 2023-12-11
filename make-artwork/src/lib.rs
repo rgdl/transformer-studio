@@ -92,7 +92,6 @@ fn dot_product_grid(grid1: Tensor3, grid2: Tensor3) -> Array {
 }
 
 
-#[pyfunction]
 fn random_normal(rows: usize, cols: usize) -> Tensor3 {
     let seed: [u8; 32] = [1; 32];
     let mut rng: StdRng = SeedableRng::from_seed(seed);
@@ -222,9 +221,8 @@ fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
 }
 
 #[pyfunction]
-fn perlin(gradients: Tensor3, scale: f32) -> Array {
-    let rows = gradients.len() - 1;
-    let cols = gradients[0].len() - 1;
+fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
+    let gradients = random_normal(rows, cols);
 
     let (x_grid, y_grid) = make_grids(rows, cols, scale);
 
@@ -265,7 +263,6 @@ fn perlin(gradients: Tensor3, scale: f32) -> Array {
 
 #[pymodule]
 fn rust_perlin(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(random_normal, m)?)?;
     m.add_function(wrap_pyfunction!(perlin, m)?)?;
 
     Ok(())
