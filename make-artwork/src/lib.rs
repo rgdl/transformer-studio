@@ -12,7 +12,6 @@ type IntArray = Vec<Vec<i32>>;
 type AnyArray = Vec<Vec<Num32>>;
 type Tensor3 = Vec<Vec<Vec<f32>>>;
 
-#[pyfunction]
 fn smoothstep(x: Array) -> Array {
     x.iter().map(
         |row| row.iter().map(
@@ -26,27 +25,26 @@ fn smoothstep(x: Array) -> Array {
     ).collect()
 }
 
-#[pyfunction]
 fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array, dot11: Array) -> Array {
     let u = smoothstep(dx0);
     let v = smoothstep(dy0);
 
     let interpolate0 = add_grid(
-        dot00.clone(),
-        hadamard_product(u.clone(), subtract_grid(dot10, dot00.clone())),
+        &dot00,
+        &hadamard_product(&u, &subtract_grid(&dot10, &dot00)),
     );
 
     let interpolate1 = add_grid(
-        dot01.clone(),
-        hadamard_product(u, subtract_grid(dot11, dot01.clone())),
+        &dot01,
+        &hadamard_product(&u, &subtract_grid(&dot11, &dot01)),
     );
 
-    let mut final_noise = add_grid(
-        interpolate0.clone(),
-        hadamard_product(v, subtract_grid(interpolate1, interpolate0.clone())),
+    let final_noise = add_grid(
+        &interpolate0,
+        &hadamard_product(&v, &subtract_grid(&interpolate1, &interpolate0)),
     );
 
-    let (min, max) = grid_min_max(final_noise.clone());
+    let (min, max) = grid_min_max(&final_noise);
 
     final_noise.iter().map(
         |row| row.iter().map(
@@ -55,14 +53,14 @@ fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array,
     ).collect()
 }
 
-fn grid_min_max(grid: Array) -> (f32, f32) {
+fn grid_min_max(grid: &Array) -> (f32, f32) {
     let mut min = grid[0][0];
     let mut max = grid[0][0];
 
     for row in grid {
         for val in row {
-            if val < min { min = val }
-            if val > max { max = val }
+            if val < &min { min = *val }
+            if val > &max { max = *val }
         }
     }
 
@@ -77,7 +75,7 @@ fn dot_product(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
     vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum()
 }
 
-fn hadamard_product(array1: Array, array2: Array) -> Array {
+fn hadamard_product(array1: &Array, array2: &Array) -> Array {
     array1.iter().zip(array2.iter()).map(
         |(row1, row2)| row1.iter().zip(row2.iter()).map(
             |(a, b)| a * b
@@ -85,7 +83,6 @@ fn hadamard_product(array1: Array, array2: Array) -> Array {
     ).collect()
 }
 
-#[pyfunction]
 fn dot_product_grid(grid1: Tensor3, grid2: Tensor3) -> Array {
     grid1.iter().zip(grid2.iter()).map(
         |(row1, row2)| row1.iter().zip(row2.iter()).map(
@@ -118,7 +115,6 @@ fn random_normal(rows: usize, cols: usize) -> Tensor3 {
 // TODO: any for loops that can be refactored to iter() patterns
 // TODO: reduce cloning once it's all in rust
 
-#[pyfunction]
 fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
     let x_row: Vec<f32> = (0..cols).map(|i| scale * (i as f32) / (cols as f32)).collect();
 
@@ -136,8 +132,7 @@ fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
     (x_grid, y_grid)
 }
 
-#[pyfunction]
-fn quantise_grid(grid: Array, quantise_up: bool) -> IntArray {
+fn quantise_grid(grid: &Array, quantise_up: bool) -> IntArray {
     grid.iter().map(
         |row| row.iter().map(
             // N.B. val.ceil() rounded up ~0 to 1, hence using val.floor() + 1.0
@@ -148,8 +143,7 @@ fn quantise_grid(grid: Array, quantise_up: bool) -> IntArray {
 
 // TODO: once we've got the whole thing moved to rust, do a clever version using enums that can
 // contain either floats or ints
-#[pyfunction]
-fn multiply_grid(scalar: f32, grid: Array) -> Array {
+fn multiply_grid(scalar: f32, grid: &Array) -> Array {
     grid.iter().map(
         |row| row.iter().map(
             |val| scalar * val
@@ -157,8 +151,15 @@ fn multiply_grid(scalar: f32, grid: Array) -> Array {
     ).collect()
 }
 
-#[pyfunction]
-fn add_grid(grid1: Array, grid2: Array) -> Array {
+fn multiply_int_grid(scalar: f32, grid: &IntArray) -> Array {
+    grid.iter().map(
+        |row| row.iter().map(
+            |&val| scalar * val as f32
+        ).collect()
+    ).collect()
+}
+
+fn add_grid(grid1: &Array, grid2: &Array) -> Array {
     if grid1.len() != grid2.len() || grid1[0].len() != grid2[0].len() {
         panic!("Mismatching grid shapes");
     }
@@ -170,12 +171,11 @@ fn add_grid(grid1: Array, grid2: Array) -> Array {
     ).collect()
 }
 
-fn subtract_grid(grid1: Array, grid2: Array) -> Array {
-    add_grid(grid1, multiply_grid(-1.0, grid2))
+fn subtract_grid(grid1: &Array, grid2: &Array) -> Array {
+    add_grid(&grid1, &multiply_grid(-1.0, &grid2))
 }
 
-#[pyfunction]
-fn get_corner_gradients(gradients: Tensor3, quantised_rows: IntArray, quantised_cols: IntArray) -> Tensor3 {
+fn get_corner_gradients(gradients: &Tensor3, quantised_rows: &IntArray, quantised_cols: &IntArray) -> Tensor3 {
     let n_rows = quantised_rows.len();
     let n_cols = quantised_rows[0].len();
 
@@ -197,8 +197,7 @@ fn get_corner_gradients(gradients: Tensor3, quantised_rows: IntArray, quantised_
     result
 }
 
-#[pyfunction]
-fn stack_arrays(array1: Array, array2: Array) -> Tensor3 {
+fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
     let n_rows = array1.len();
     let n_cols = array1[0].len();
 
@@ -222,27 +221,52 @@ fn stack_arrays(array1: Array, array2: Array) -> Tensor3 {
     result
 }
 
-//#[pyfunction]
-//fn multiply_grid(scalar: Num32, grid: AnyArray) -> Array {
-//    grid.iter().map(
-//        |row| row.iter().map(
-//            |val| scalar * val as i32
-//        ).collect()
-//    ).collect()
-//}
+#[pyfunction]
+fn perlin(gradients: Tensor3, scale: f32) -> Array {
+    let rows = gradients.len() - 1;
+    let cols = gradients[0].len() - 1;
+
+    let (x_grid, y_grid) = make_grids(rows, cols, scale);
+
+    // Indices for nearest grid points
+
+    let x0 = quantise_grid(&x_grid, false);
+    let x1 = quantise_grid(&x_grid, true);
+    let y0 = quantise_grid(&y_grid, false);
+    let y1 = quantise_grid(&y_grid, true);
+
+    // Calculate the distance vectors from the grid points to the coordinates
+
+    let dx0 = add_grid(&x_grid, &multiply_int_grid(-1.0, &x0));
+    let dx1 = add_grid(&x_grid, &multiply_int_grid(-1.0, &x1));
+    let dy0 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y0));
+    let dy1 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y1));
+
+    // Calculate the dot products between the gradient vectors and the distance vectors
+    let dot00 = dot_product_grid(
+        get_corner_gradients(&gradients, &y0, &x0), stack_arrays(&dx0, &dy0)
+    );
+
+    let dot10 = dot_product_grid(
+        get_corner_gradients(&gradients, &y0, &x1), stack_arrays(&dx1, &dy0)
+    );
+
+    let dot01 = dot_product_grid(
+        get_corner_gradients(&gradients, &y1, &x0), stack_arrays(&dx0, &dy1)
+    );
+
+    let dot11 = dot_product_grid(
+        get_corner_gradients(&gradients, &y1, &x1), stack_arrays(&dx1, &dy1)
+    );
+
+    interpolate(dx0, dy0, dot00, dot10, dot01, dot11)
+
+}
 
 #[pymodule]
 fn rust_perlin(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(smoothstep, m)?)?;
     m.add_function(wrap_pyfunction!(random_normal, m)?)?;
-    m.add_function(wrap_pyfunction!(make_grids, m)?)?;
-    m.add_function(wrap_pyfunction!(quantise_grid, m)?)?;
-    m.add_function(wrap_pyfunction!(multiply_grid, m)?)?;
-    m.add_function(wrap_pyfunction!(add_grid, m)?)?;
-    m.add_function(wrap_pyfunction!(get_corner_gradients, m)?)?;
-    m.add_function(wrap_pyfunction!(stack_arrays, m)?)?;
-    m.add_function(wrap_pyfunction!(dot_product_grid, m)?)?;
-    m.add_function(wrap_pyfunction!(interpolate, m)?)?;
+    m.add_function(wrap_pyfunction!(perlin, m)?)?;
 
     Ok(())
 }

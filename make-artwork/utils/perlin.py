@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 import rust_perlin
-from utils import timer
 
 CHUNK_SIZE = 256
 
@@ -18,6 +17,7 @@ def _as_heatmap(array, title):
     sns.heatmap(array)
     plt.title(title)
     st.pyplot(fig)
+
 
 def smoothstep(x: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
     if (x.min() < 0) or (x.max() > 1):
@@ -36,115 +36,61 @@ def get_gradients(shape: tuple[int, int]) -> npt.NDArray[np.float_]:
 
 #@st.cache_data
 def perlin(shape: tuple[int, int], scale=1.0, rust: bool = False):
-    with timer("PERLIN - generate_gradients"):
-        if rust and False:
-            gradients = np.array(rust_perlin.random_normal(*shape))
-        else:
-            gradients = get_gradients(shape)
+    if rust and False:
+        gradients = np.array(rust_perlin.random_normal(*shape))
+    else:
+        gradients = get_gradients(shape)
 
-    with timer("PERLIN - grid"):
-        # Generate a grid of coordinates
-        if rust:
-            x_grid, y_grid = (np.array(a) for a in rust_perlin.make_grids(*shape, scale))
-        else:
-            x = np.linspace(0, scale, num=shape[1], endpoint=False)
-            y = np.linspace(0, scale, num=shape[0], endpoint=False)
-            x_grid, y_grid = np.meshgrid(x, y)
+    if rust:
+        return np.array(rust_perlin.perlin(gradients, scale))
 
-    with timer("PERLIN - indices"):
-        # Calculate the indices of the four nearest grid points
-        if rust:
-            x0 = np.array(rust_perlin.quantise_grid(x_grid, quantise_up=False))
-            x1 = np.array(rust_perlin.quantise_grid(x_grid, quantise_up=True))
-            y0 = np.array(rust_perlin.quantise_grid(y_grid, quantise_up=False))
-            y1 = np.array(rust_perlin.quantise_grid(y_grid, quantise_up=True))
-        else:
-            x0 = np.floor(x_grid).astype(int)
-            x1 = x0 + 1
-            y0 = np.floor(y_grid).astype(int)
-            y1 = y0 + 1
+    # Generate a grid of coordinates
+    x = np.linspace(0, scale, num=shape[1], endpoint=False)
+    y = np.linspace(0, scale, num=shape[0], endpoint=False)
+    x_grid, y_grid = np.meshgrid(x, y)
 
-    with timer("PERLIN - distance vectors"):
-        # Calculate the distance vectors from the grid points to the coordinates
-        if rust:
-            dx0 = rust_perlin.add_grid(
-                x_grid,
-                rust_perlin.multiply_grid(-1, x0),
-            )
-            dx1 = rust_perlin.add_grid(
-                x_grid,
-                rust_perlin.multiply_grid(-1, x1),
-            )
-            dy0 = rust_perlin.add_grid(
-                y_grid,
-                rust_perlin.multiply_grid(-1, y0),
-            )
-            dy1 = rust_perlin.add_grid(
-                y_grid,
-                rust_perlin.multiply_grid(-1, y1),
-            )
-        else:
-            dx0 = x_grid - x0
-            dx1 = x_grid - x1
-            dy0 = y_grid - y0
-            dy1 = y_grid - y1
+    # Calculate the indices of the four nearest grid points
+    x0 = np.floor(x_grid).astype(int)
+    x1 = x0 + 1
+    y0 = np.floor(y_grid).astype(int)
+    y1 = y0 + 1
 
-    with timer("PERLIN - dot products"):
-        # Calculate the dot products between the gradient vectors and the distance vectors
-        if rust and False:  # super slow for now, so OK to skip
-            corner00 = np.array(rust_perlin.get_corner_gradients(gradients, y0, x0))
-            corner10 = np.array(rust_perlin.get_corner_gradients(gradients, y0, x1))
-            corner01 = np.array(rust_perlin.get_corner_gradients(gradients, y1, x0))
-            corner11 = np.array(rust_perlin.get_corner_gradients(gradients, y1, x1))
+    # Calculate the distance vectors from the grid points to the coordinates
+    dx0 = x_grid - x0
+    dx1 = x_grid - x1
+    dy0 = y_grid - y0
+    dy1 = y_grid - y1
 
-            dist00 = np.array(rust_perlin.stack_arrays(dx0, dy0))
-            dist10 = np.array(rust_perlin.stack_arrays(dx1, dy0))
-            dist01 = np.array(rust_perlin.stack_arrays(dx0, dy1))
-            dist11 = np.array(rust_perlin.stack_arrays(dx1, dy1))
+    # Calculate the dot products between the gradient vectors and the distance vectors
+    corner00 = gradients[y0, x0]
+    corner10 = gradients[y0, x1]
+    corner01 = gradients[y1, x0]
+    corner11 = gradients[y1, x1]
 
-            dot00 = np.array(rust_perlin.dot_product_grid(corner00, dist00))
-            dot10 = np.array(rust_perlin.dot_product_grid(corner10, dist10))
-            dot01 = np.array(rust_perlin.dot_product_grid(corner01, dist01))
-            dot11 = np.array(rust_perlin.dot_product_grid(corner11, dist11))
+    dist00 = np.dstack((dx0, dy0))
+    dist10 = np.dstack((dx1, dy0))
+    dist01 = np.dstack((dx0, dy1))
+    dist11 = np.dstack((dx1, dy1))
 
-        else:
-            corner00 = gradients[y0, x0]
-            corner10 = gradients[y0, x1]
-            corner01 = gradients[y1, x0]
-            corner11 = gradients[y1, x1]
+    dot00 = np.sum(corner00 * dist00, axis=2)
+    dot10 = np.sum(corner10 * dist10, axis=2)
+    dot01 = np.sum(corner01 * dist01, axis=2)
+    dot11 = np.sum(corner11 * dist11, axis=2)
 
-            dist00 = np.dstack((dx0, dy0))
-            dist10 = np.dstack((dx1, dy0))
-            dist01 = np.dstack((dx0, dy1))
-            dist11 = np.dstack((dx1, dy1))
+    # Interpolate the dot product values using smoothstep function
+    u = smoothstep(dx0)
+    v = smoothstep(dy0)
 
-            dot00 = np.sum(corner00 * dist00, axis=2)
-            dot10 = np.sum(corner10 * dist10, axis=2)
-            dot01 = np.sum(corner01 * dist01, axis=2)
-            dot11 = np.sum(corner11 * dist11, axis=2)
+    # Interpolate along the x-axis
+    interpolate0 = dot00 + u * (dot10 - dot00)
+    interpolate1 = dot01 + u * (dot11 - dot01)
 
-    with timer("PERLIN - interpolation"):
-        # Interpolate the dot product values using smoothstep function
-        if rust:
-            final_noise = np.array(rust_perlin.interpolate(
-                dx0, dy0, dot00, dot10, dot01, dot11
-            ))
+    # Interpolate along the y-axis to get the final noise value
+    final_noise = interpolate0 + v * (interpolate1 - interpolate0)
 
-        else:
-            u = smoothstep(dx0)
-            v = smoothstep(dy0)
+    final_noise -= final_noise.min()
+    final_noise /= final_noise.max()
 
-            # Interpolate along the x-axis
-            interpolate0 = dot00 + u * (dot10 - dot00)
-            interpolate1 = dot01 + u * (dot11 - dot01)
-
-            # Interpolate along the y-axis to get the final noise value
-            final_noise = interpolate0 + v * (interpolate1 - interpolate0)
-
-            final_noise -= final_noise.min()
-            final_noise /= final_noise.max()
-
-    st.sidebar.divider()
     return final_noise
 
 
