@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use pyo3::prelude::*;
 use rand::{SeedableRng, rngs::StdRng};
 use rand_distr::{Normal, Distribution};
@@ -8,10 +6,102 @@ use rayon::prelude::*;
 // Currently running slower than the python equivalent, possibly due to the overhead of moving data
 // between processes. Would be good to profile it, use parallelisation, etc.
 
-//enum Num32 {
-//    Integer(i32),
-//    Float(f32),
-//}
+enum Number {
+    Integer(usize),
+    Float(f32),
+}
+
+struct _Array {
+    data: Vec<Vec<f32>>,
+    rows: usize,
+    cols: usize,
+}
+
+impl _Array {
+    fn new(data: Vec<Vec<f32>>) -> Self {
+        let rows = data.len();
+        let cols = data[0].len();
+        Self { data: data, rows, cols }
+    }
+
+    fn check_range(&self, min: f32, max: f32) -> &Self {
+        for r in 0..self.rows {
+            for c in 0..self.cols {
+                let val = self.data[r][c];
+
+                if val < min || val > max {
+                    panic!("Value {} is out of range", val);
+                }
+            }
+        }
+
+        self
+    }
+
+    fn apply<F: Sync + Send>(&self, func: F) -> Self
+    where F: Fn(&f32) -> f32, {
+        Self::new(
+            self.data.par_iter().map(
+                |row| row.par_iter().map(|val| func(&val)).collect()
+            ).collect()
+        )
+    }
+
+    fn zip_apply<F: Sync + Send>(&self, other: &Self, func: F) -> Self
+    where F: Fn(&f32, &f32) -> f32, {
+        Self::new(
+            self.data.par_iter().zip(other.data.par_iter()).map(
+                |(row1, row2)| row1.par_iter().zip(row2.par_iter()).map(
+                    |(val1, val2)| func(val1, val2)
+                ).collect()
+            ).collect()
+        )
+    }
+
+    fn check_same_size(&self, other: &Self) -> &Self {
+        if self.cols != other.cols || self.rows != other.rows {
+            panic!("Size mismatch!");
+        }
+        self
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        self.check_same_size(other);
+        self.zip_apply(&other, |val1, val2| val1 + val2)
+    }
+
+    fn multiply(&self, scalar: f32) -> Self {
+        self.apply(|val| scalar * val)
+    }
+
+    fn hadamard(&self, other: &Self) -> Self {
+        self.check_same_size(other);
+        self.zip_apply(&other, |val1, val2| val1 * val2)
+    }
+
+    fn subtract(&self, other: &Self) -> Self {
+        self.add(&other.multiply(-1.0))
+    }
+
+
+    fn smoothstep(&self) -> Self {
+        self.check_range(0.0, 1.0).apply(|&i| i * i * (3.0 - 2.0 * i))
+    }
+
+    fn min_max(&self) -> (f32, f32) {
+        let mut min = &self.data[0][0];
+        let mut max = &self.data[0][0];
+
+        for row in &self.data {
+            for val in row {
+                if val < min { min = val }
+                if val > max { max = val }
+            }
+        }
+
+        (*min, *max)
+    }
+}
 
 type Array = Vec<Vec<f32>>;
 type UsizeArray = Vec<Vec<usize>>;
@@ -34,54 +124,37 @@ where F: Fn(&T, &T) -> R, {
     ).collect()
 }
 
-fn smoothstep(x: Array) -> Array {
-    apply(
-        &x, 
-        |&i| {
-            if i < 0.0 || i > 1.0 {
-                panic!("Value {} is out of range", i);
-            }
-            i * i * (3.0 - 2.0 * i)
-        },
-    )
-}
+fn interpolate(dx0: _Array, dy0: _Array, dot00: _Array, dot10: _Array, dot01: _Array, dot11: _Array) -> _Array {
+    let u = dx0.smoothstep();
+    let v = dy0.smoothstep();
 
-fn interpolate(dx0: Array, dy0: Array, dot00: Array, dot10: Array, dot01: Array, dot11: Array) -> Array {
-    let u = smoothstep(dx0);
-    let v = smoothstep(dy0);
-
-    let interpolate0 = add_grid(
-        &dot00,
-        &hadamard_product(&u, &subtract_grid(&dot10, &dot00)),
+    let interpolate0 = dot00.add(
+        &u.hadamard(
+            &dot10.subtract(
+                &dot00
+            )
+        )
     );
 
-    let interpolate1 = add_grid(
-        &dot01,
-        &hadamard_product(&u, &subtract_grid(&dot11, &dot01)),
+    let interpolate1 = dot01.add(
+        &u.hadamard(
+            &dot11.subtract(
+                &dot01
+            )
+        )
     );
 
-    let final_noise = add_grid(
-        &interpolate0,
-        &hadamard_product(&v, &subtract_grid(&interpolate1, &interpolate0)),
+    let final_noise = interpolate0.add(
+        &v.hadamard(
+            &interpolate1.subtract(
+                &interpolate0
+            )
+        )
     );
 
-    let (min, max) = grid_min_max(&final_noise);
+    let (min, max) = final_noise.min_max();
 
-    apply(&final_noise, |x| (x - min) / (max - min))
-}
-
-fn grid_min_max(grid: &Array) -> (f32, f32) {
-    let mut min = grid[0][0];
-    let mut max = grid[0][0];
-
-    for row in grid {
-        for val in row {
-            if val < &min { min = *val }
-            if val > &max { max = *val }
-        }
-    }
-
-    (min, max)
+    final_noise.apply(|x| (x - min) / (max - min))
 }
 
 // TODO turn on strict linting, write doc strings, more abstractions. Once I know exactly what kind
@@ -104,18 +177,13 @@ fn random_normal(rows: usize, cols: usize) -> Tensor3 {
     let mut rng: StdRng = SeedableRng::from_seed(seed);
     let normal = Normal::new(0.0, 1.0).unwrap();
 
-    let mut result = Vec::with_capacity(rows);
-
-    for _ in 0..=rows {
-        let mut row = Vec::with_capacity(cols);
-        for _ in 0..=cols {
-            let val = vec![normal.sample(&mut rng), normal.sample(&mut rng)];
-            row.push(val);
-        }
-        result.push(row);
-    }
-
-    result
+    (0..=rows).map(
+        |_| (0..=cols).map(
+            |_| vec![
+                normal.sample(&mut rng), normal.sample(&mut rng)
+            ]
+        ).collect()
+    ).collect()
 }
 
 fn make_grids(rows: usize, cols: usize, scale: f32) -> (Array, Array) {
@@ -157,19 +225,13 @@ fn multiply_int_grid(scalar: f32, grid: &UsizeArray) -> Array {
 }
 
 fn add_grid(grid1: &Array, grid2: &Array) -> Array {
-    if grid1.len() != grid2.len() || grid1[0].len() != grid2[0].len() {
-        panic!("Mismatching grid shapes");
-    }
-
-    zip_apply(&grid1, &grid2, |val1, val2| val1 + val2)
+    _Array::new(grid1.clone()).add(&_Array::new(grid2.clone())).data
 }
 
 fn subtract_grid(grid1: &Array, grid2: &Array) -> Array {
     add_grid(&grid1, &multiply_grid(-1.0, &grid2))
 }
 
-// TODO: slowest function
-//
 fn get_corner_gradients<'a>(gradients: &'a Tensor3, quantised_rows: &UsizeArray, quantised_cols: &UsizeArray) -> Vec<Vec<&'a Vec<f32>>> {
     zip_apply(
         &quantised_rows,
@@ -190,19 +252,9 @@ fn stack_arrays(array1: &Array, array2: &Array) -> Tensor3 {
 }
 
 #[pyfunction]
-fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
-    let mut t0 = SystemTime::now();
-
+pub fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     let gradients = random_normal(rows, cols);
-
-    println!("***");
-    println!("get gradients: {:?}", SystemTime::now().duration_since(t0));
-    t0 = SystemTime::now();
-
     let (x_grid, y_grid) = make_grids(rows, cols, scale);
-
-    println!("make_grids: {:?}", SystemTime::now().duration_since(t0));
-    t0 = SystemTime::now();
 
     // Indices for nearest grid points
 
@@ -211,18 +263,12 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
     let y0 = quantise_grid(&y_grid, false);
     let y1 = quantise_grid(&y_grid, true);
 
-    println!("quantise_grid: {:?}", SystemTime::now().duration_since(t0));
-    t0 = SystemTime::now();
-
     // Calculate the distance vectors from the grid points to the coordinates
 
     let dx0 = add_grid(&x_grid, &multiply_int_grid(-1.0, &x0));
     let dx1 = add_grid(&x_grid, &multiply_int_grid(-1.0, &x1));
     let dy0 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y0));
     let dy1 = add_grid(&y_grid, &multiply_int_grid(-1.0, &y1));
-
-    println!("distance vectors: {:?}", SystemTime::now().duration_since(t0));
-    t0 = SystemTime::now();
 
     // Calculate the dot products between the gradient vectors and the distance vectors
 
@@ -245,19 +291,26 @@ fn perlin(rows: usize, cols: usize, scale: f32) -> Array {
         stack_arrays(&dx0, &dy1).iter().map(|row| row.iter().collect()).collect()
     );
 
-    let dot11 = dot_product_grid(
+    //let dot11 = dot_product_grid(
+    //    get_corner_gradients(&gradients, &y1, &x1),
+    //    // Turn inner vectors into references
+    //    stack_arrays(&dx1, &dy1).iter().map(|row| row.iter().collect()).collect()
+    //);
+
+    let _dot11 = dot_product_grid(
         get_corner_gradients(&gradients, &y1, &x1),
         // Turn inner vectors into references
         stack_arrays(&dx1, &dy1).iter().map(|row| row.iter().collect()).collect()
     );
 
-    println!("dot products: {:?}", SystemTime::now().duration_since(t0));
-    t0 = SystemTime::now();
-
-    let final_noise = interpolate(dx0, dy0, dot00, dot10, dot01, dot11);
-
-    println!("interpolate: {:?}", SystemTime::now().duration_since(t0));
-    final_noise
+    interpolate(
+        _Array::new(dx0),
+        _Array::new(dy0),
+        _Array::new(dot00),
+        _Array::new(dot10),
+        _Array::new(dot01),
+        _Array::new(dot11),
+    ).data
 }
 
 #[pymodule]

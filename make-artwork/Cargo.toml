@@ -2,9 +2,20 @@
 name = "rust_perlin"
 version = "0.1.0"
 edition = "2021"
-crate-type = ["cdylib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+debug = 1
+
+[lib]
+name = "rust_perlin"
+path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
+
+[[bin]]
+name = "rust_perlin"
+path = "src/main.rs"
 
 [dependencies]
 pyo3 = "0.20.0"
