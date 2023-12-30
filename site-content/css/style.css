@@ -1,0 +1,18 @@
+body, hr {
+    font-family: monospace;
+    color: darkgoldenrod;
+    background-color: azure;
+    text-align: justify;
+	margin: 0 19%;
+}
+
+h1, h2 {
+    font-family: sans-serif;
+    color: blueviolet;
+    text-align: center;
+}
+
+a {
+	font-weight: bold;
+    color: blueviolet;
+}
